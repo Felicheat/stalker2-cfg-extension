@@ -1,0 +1,39 @@
+{
+  "scopeName": "source.struct",
+  "name": "Stalkercfg",
+  "fileTypes": ["cfg"],
+  "patterns": [
+    {
+      "name": "keyword.control.struct",
+      "match": "\\bstruct\\.(begin|end)\\b"
+    },
+    {
+      "name": "entity.name.type.struct",
+      "match": "^[\\w\\d_]+(?=\\s*:\\s*struct\\.begin)"
+    },
+    {
+      "name": "punctuation.definition.parameters.struct",
+      "begin": "\\{",
+      "end": "\\}",
+      "patterns": [
+        {
+          "name": "variable.parameter.struct",
+          "match": "[\\w\\d_]+"
+        },
+        {
+          "name": "keyword.operator.assignment.struct",
+          "match": "="
+        },
+        {
+          "name": "punctuation.terminator.struct",
+          "match": ";"
+        }
+      ]
+    },
+    {
+      "name": "comment.line.double-slash.struct",
+      "match": "//.*$"
+    }
+  ],
+  "repository": {}
+}
