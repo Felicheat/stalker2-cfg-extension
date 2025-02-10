@@ -12,10 +12,56 @@ A lightweight Visual Studio Code extension for validating Stalker 2 CFG file for
 ## Requirements
 
 - **Visual Studio Code:** Version 1.60.0 or later.
-- **Node.js:** Version 16 (or later) is recommended.
+- **Node.js:** Version 18 (or later) is recommended.
 - **npm:** Comes with Node.js.
 
 ## Installation
+
+### From Source (For Developers)
+
+1. **Clone the Repository:**
+
+   ```bash
+   git clone https://github.com/Felicheat/stalker2-cfg-extension.git
+   cd stalker2-cfg-extension
+   ```
+
+2. **Install Dependencies:**
+
+   ```bash
+   npm install
+   ```
+
+3. **Compile the Extension:**
+
+   ```bash
+   npm run compile
+   ```
+
+4. **Launch the Extension in VS Code:**
+
+   - Open the project folder in VS Code.
+   - Press `F5` to open a new Extension Development Host with the extension loaded.
+
+### Creating the VSIX Package
+
+Once you have the files set up and your code compiled (i.e., the `out/extension.js` file exists), you can create the VSIX file using the [VSCE](https://github.com/microsoft/vscode-vsce) tool.
+
+1. **Install VSCE (if you haven't already):**
+
+   ```bash
+   npm install -g vsce
+   ```
+
+2. **Package the Extension:**
+
+   From the root of your project, run:
+
+   ```bash
+   vsce package
+   ```
+
+   This will create a VSIX file (e.g., `struct-validator-0.0.1.vsix`) that you can distribute for offline installation.
 
 ### Using a VSIX File
 
@@ -26,10 +72,3 @@ If you have a packaged VSIX file:
 3. Type and select **Extensions: Install from VSIX...**.
 4. Navigate to and select the downloaded `.vsix` file.
 
-### From Source (For Developers)
-
-1. **Clone the Repository:**
-
-   ```bash
-   git clone https://github.com/Felicheat/stalker2-cfg-extension
-   cd stalker2-cfg-extension
