@@ -2,12 +2,25 @@
   "name": "stalker2-cfg-validator",
   "displayName": "STALKER 2 CFG Struct Validator",
   "description": "A lightweight VS Code extension for validating STALKER 2's struct.begin/struct.end blocks.",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "author": "Felicheat",
   "engines": {
     "vscode": "^1.60.0"
   },
   "categories": [
     "Other"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Felicheat/stalker2-cfg-extension.git"
+  },
+  "license": "GPL-3.0-only",
+  "keywords": [
+    "vscode",
+    "extension",
+    "validator",
+    "stalker2",
+    "cfg"
   ],
   "activationEvents": [
     "onLanguage:stalkercfg"
@@ -38,7 +51,18 @@
         "scopeName": "source.struct",
         "path": "./syntaxes/struct.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "STALKER 2 CFG Struct Validator",
+      "properties": {
+        "stalker2CfgValidator.indentLevel": {
+          "type": "number",
+          "default": 4,
+          "description": "The number of spaces to indent content within each block."
+        }
+      }
+    }
   },
   "scripts": {
     "compile": "npm run check-types && node esbuild.js",
