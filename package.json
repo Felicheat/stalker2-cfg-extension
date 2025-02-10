@@ -46,16 +46,19 @@
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "package": "vcse package"
+    "package": "vsce package"
   },
   "devDependencies": {
     "@types/node": "^18.0.0",
     "@types/vscode": "^1.60.0",
     "esbuild": "^0.25.0",
-    "typescript": "^4.5.0",
-    "vscode": "^1.1.34"
+    "typescript": "^4.5.0"
   },
-  "dependencies": {
-    "node": "^23.7.0"
-  }
+  "files": [
+    "out",
+    "syntaxes",
+    "themes",
+    "README.md",
+    "LICENSE"
+  ]
 }
