@@ -1,0 +1,43 @@
+{
+  "name": "Stalkercfg Theme",
+  "type": "dark",
+  "tokenColors": [
+    {
+      "scope": "keyword.control.struct",
+      "settings": {
+        "foreground": "#569CD6"
+      }
+    },
+    {
+      "scope": "entity.name.type.struct",
+      "settings": {
+        "foreground": "#4EC9B0"
+      }
+    },
+    {
+      "scope": "punctuation.definition.parameters.struct",
+      "settings": {
+        "foreground": "#CE9178"
+      }
+    },
+    {
+      "scope": "variable.parameter.struct",
+      "settings": {
+        "foreground": "#9CDCFE"
+      }
+    },
+    {
+      "scope": "keyword.operator.assignment.struct",
+      "settings": {
+        "foreground": "#D4D4D4"
+      }
+    },
+    {
+      "scope": "comment.line.double-slash.struct",
+      "settings": {
+        "foreground": "#6A9955",
+        "fontStyle": "italic"
+      }
+    }
+  ]
+}
