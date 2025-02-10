@@ -1,0 +1,56 @@
+{
+  "name": "struct-validator",
+  "displayName": "Struct Validator",
+  "description": "A lightweight VS Code extension for validating struct.begin/struct.end blocks.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:stalkercfg"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "stalkercfg",
+        "extensions": [
+          ".cfg"
+        ],
+        "aliases": [
+          "Stalkercfg"
+        ]
+      }
+    ],
+    "themes": [
+      {
+        "label": "StructLang Theme",
+        "uiTheme": "vs-dark",
+        "path": "./themes/structTheme-color-theme.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "stalkercfg",
+        "scopeName": "source.struct",
+        "path": "./syntaxes/struct.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.60.0",
+    "typescript": "^4.5.0",
+    "vscode": "^1.1.37"
+  }
+}
