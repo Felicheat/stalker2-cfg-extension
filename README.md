@@ -45,7 +45,7 @@ A lightweight Visual Studio Code extension for validating Stalker 2 CFG file for
 
 ### Creating the VSIX Package
 
-Once you have the files set up and your code compiled (i.e., the `out/extension.js` file exists), you can create the VSIX file using the [VSCE](https://github.com/microsoft/vscode-vsce) tool.
+Once you have the files set up and your code compiled (i.e., the `out/extension.cjs` file exists), you can create the VSIX file using the [VSCE](https://github.com/microsoft/vscode-vsce) tool.
 
 1. **Install VSCE (if you haven't already):**
 
