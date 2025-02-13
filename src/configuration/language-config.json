@@ -1,0 +1,24 @@
+{
+  "comments": {
+    "lineComment": "//"
+  },
+  "brackets": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"]
+  ],
+  "onEnterRules": [
+    {
+      "beforeText": "^\\s*.+?:\\s*struct\\.begin.*$",
+      "action": {
+        "indentAction": "Indent"
+      }
+    },
+    {
+      "beforeText": "^(\\s*).*\\S.*$",
+      "action": {
+        "indentAction": "Indent"
+      }
+    }
+  ]
+}

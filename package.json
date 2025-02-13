@@ -4,6 +4,7 @@
   "description": "A lightweight VS Code extension for validating STALKER 2's struct.begin/struct.end blocks.",
   "version": "0.2.0",
   "author": "Felicheat",
+  "type": "module",
   "engines": {
     "vscode": "^1.60.0"
   },
@@ -22,10 +23,7 @@
     "stalker2",
     "cfg"
   ],
-  "activationEvents": [
-    "onLanguage:stalkercfg"
-  ],
-  "main": "./out/extension.js",
+  "main": "./out/extension.cjs",
   "contributes": {
     "languages": [
       {
@@ -35,7 +33,8 @@
         ],
         "aliases": [
           "Stalkercfg"
-        ]
+        ],
+        "configuration": "./configuration/language-config.json"
       }
     ],
     "themes": [
@@ -58,7 +57,7 @@
       "properties": {
         "stalker2CfgValidator.indentLevel": {
           "type": "number",
-          "default": 4,
+          "default": 3,
           "description": "The number of spaces to indent content within each block."
         }
       }

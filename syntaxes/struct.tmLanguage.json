@@ -3,37 +3,113 @@
   "name": "Stalkercfg",
   "fileTypes": ["cfg"],
   "patterns": [
-    {
-      "name": "keyword.control.struct",
-      "match": "\\bstruct\\.(begin|end)\\b"
-    },
-    {
-      "name": "entity.name.type.struct",
-      "match": "^[\\w\\d_]+(?=\\s*:\\s*struct\\.begin)"
-    },
-    {
-      "name": "punctuation.definition.parameters.struct",
-      "begin": "\\{",
-      "end": "\\}",
-      "patterns": [
-        {
-          "name": "variable.parameter.struct",
-          "match": "[\\w\\d_]+"
-        },
-        {
-          "name": "keyword.operator.assignment.struct",
-          "match": "="
-        },
-        {
-          "name": "punctuation.terminator.struct",
-          "match": ";"
-        }
-      ]
-    },
-    {
+    { "include": "#comment" },
+    { "include": "#blockLevel1" },
+    { "include": "#assignment" },
+    { "include": "#keywordControl" }
+  ],
+  "repository": {
+    "comment": {
       "name": "comment.line.double-slash.struct",
       "match": "//.*$"
+    },
+    "keywordControl": {
+      "name": "keyword.control.struct",
+      "match": "\\b(struct\\.begin|struct\\.end)\\b"
+    },
+    "blockLevel1": {
+      "name": "meta.block.struct.level1",
+      "begin": "^(\\s*)(.+?)\\s*(:)\\s*(struct\\.begin)(\\s*//.*)?$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.whitespace.block.level1" },
+        "2": { "name": "entity.name.section.struct.level1" },
+        "3": { "name": "punctuation.separator.key-value.struct" },
+        "4": { "name": "keyword.control.struct" },
+        "5": { "name": "comment.line.double-slash.struct" }
+      },
+      "end": "^(\\s*)(struct\\.end)\\s*$",
+      "endCaptures": {
+        "1": { "name": "punctuation.whitespace.block.end" },
+        "2": { "name": "keyword.control.struct" }
+      },
+      "patterns": [{ "include": "#blockLevel2" }, { "include": "#assignment" }, { "include": "#comment" }]
+    },
+    "blockLevel2": {
+      "name": "meta.block.struct.level2",
+      "begin": "^(\\s*)(.+?)\\s*(:)\\s*(struct\\.begin)(\\s*//.*)?$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.whitespace.block.level2" },
+        "2": { "name": "entity.name.section.struct.level2" },
+        "3": { "name": "punctuation.separator.key-value.struct" },
+        "4": { "name": "keyword.control.struct" },
+        "5": { "name": "comment.line.double-slash.struct" }
+      },
+      "end": "^(\\s*)(struct\\.end)\\s*$",
+      "endCaptures": {
+        "1": { "name": "punctuation.whitespace.block.end" },
+        "2": { "name": "keyword.control.struct" }
+      },
+      "patterns": [{ "include": "#blockLevel3" }, { "include": "#assignment" }, { "include": "#comment" }]
+    },
+    "blockLevel3": {
+      "name": "meta.block.struct.level3",
+      "begin": "^(\\s*)(.+?)\\s*(:)\\s*(struct\\.begin)(\\s*//.*)?$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.whitespace.block.level3" },
+        "2": { "name": "entity.name.section.struct.level3" },
+        "3": { "name": "punctuation.separator.key-value.struct" },
+        "4": { "name": "keyword.control.struct" },
+        "5": { "name": "comment.line.double-slash.struct" }
+      },
+      "end": "^(\\s*)(struct\\.end)\\s*$",
+      "endCaptures": {
+        "1": { "name": "punctuation.whitespace.block.end" },
+        "2": { "name": "keyword.control.struct" }
+      },
+      "patterns": [{ "include": "#blockLevel4" }, { "include": "#assignment" }, { "include": "#comment" }]
+    },
+    "blockLevel4": {
+      "name": "meta.block.struct.level4",
+      "begin": "^(\\s*)(.+?)\\s*(:)\\s*(struct\\.begin)(\\s*//.*)?$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.whitespace.block.level4" },
+        "2": { "name": "entity.name.section.struct.level4" },
+        "3": { "name": "punctuation.separator.key-value.struct" },
+        "4": { "name": "keyword.control.struct" },
+        "5": { "name": "comment.line.double-slash.struct" }
+      },
+      "end": "^(\\s*)(struct\\.end)\\s*$",
+      "endCaptures": {
+        "1": { "name": "punctuation.whitespace.block.end" },
+        "2": { "name": "keyword.control.struct" }
+      },
+      "patterns": [{ "include": "#blockLevel5" }, { "include": "#assignment" }, { "include": "#comment" }]
+    },
+    "blockLevel5": {
+      "name": "meta.block.struct.level5",
+      "begin": "^(\\s*)(.+?)\\s*(:)\\s*(struct\\.begin)(\\s*//.*)?$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.whitespace.block.level5" },
+        "2": { "name": "entity.name.section.struct.level5" },
+        "3": { "name": "punctuation.separator.key-value.struct" },
+        "4": { "name": "keyword.control.struct" },
+        "5": { "name": "comment.line.double-slash.struct" }
+      },
+      "end": "^(\\s*)(struct\\.end)\\s*$",
+      "endCaptures": {
+        "1": { "name": "punctuation.whitespace.block.end" },
+        "2": { "name": "keyword.control.struct" }
+      },
+      "patterns": [{ "include": "#blockLevel5" }, { "include": "#assignment" }, { "include": "#comment" }]
+    },
+    "assignment": {
+      "name": "meta.assignment.stalkercfg",
+      "match": "^(\\s*)([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(.+)$",
+      "captures": {
+        "1": { "name": "punctuation.whitespace.assignment" },
+        "2": { "name": "variable.other.stalkercfg" },
+        "3": { "name": "string.unquoted.stalkercfg" }
+      }
     }
-  ],
-  "repository": {}
+  }
 }

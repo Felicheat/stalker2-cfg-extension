@@ -1,42 +1,60 @@
 {
-  "name": "Stalkercfg Theme",
+  "name": "Stalker2cfg Theme",
   "type": "dark",
   "tokenColors": [
     {
       "scope": "keyword.control.struct",
       "settings": {
-        "foreground": "#569CD6"
+        "foreground": "#5670d6"
       }
     },
     {
-      "scope": "entity.name.type.struct",
+      "scope": "entity.name.section.struct.level1",
       "settings": {
         "foreground": "#4EC9B0"
       }
     },
     {
-      "scope": "punctuation.definition.parameters.struct",
+      "scope": "entity.name.section.struct.level2",
       "settings": {
-        "foreground": "#CE9178"
+        "foreground": "#5ac879"
       }
     },
     {
-      "scope": "variable.parameter.struct",
+      "scope": "entity.name.section.struct.level3",
       "settings": {
-        "foreground": "#9CDCFE"
+        "foreground": "#4ec96f"
       }
     },
     {
-      "scope": "keyword.operator.assignment.struct",
+      "scope": "entity.name.section.struct.level4",
       "settings": {
-        "foreground": "#D4D4D4"
+        "foreground": "#4ec94e"
+      }
+    },
+    {
+      "scope": "entity.name.section.struct.level5",
+      "settings": {
+        "foreground": "#9ec94e"
       }
     },
     {
       "scope": "comment.line.double-slash.struct",
       "settings": {
-        "foreground": "#6A9955",
+        "foreground": "#979955",
         "fontStyle": "italic"
+      }
+    },
+    {
+      "scope": "variable.other.stalkercfg",
+      "settings": {
+        "foreground": "#D19A66"
+      }
+    },
+    {
+      "scope": "string.unquoted.stalkercfg",
+      "settings": {
+        "foreground": "#98C379"
       }
     }
   ]
