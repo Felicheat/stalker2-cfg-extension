@@ -352,10 +352,8 @@ export function buildAST(document: vscode.TextDocument, tabWidth: number = TAB_W
     // explicit end lines that closed a begin
     const endOwner = begins.findIndex(b => b.endLine === i);
     if (endOwner >= 0) {
-      const indent = countIndentFromText(document.lineAt(i).text, tabWidth);
-      const endNode: EndNode = { type: 'End', startLine: i, indent };
-      const container = findContainingBlock(i);
-      if (container) container.children.push(endNode); else root.children.push(endNode);
+      // This end closes a recorded begin; we don't create a separate EndNode for matched ends
+      // (the Block node has endLine populated). This keeps the AST tree simple.
       continue;
     }
     // orphan end
@@ -428,8 +426,23 @@ export function validateDocument(document: vscode.TextDocument, tabWidth: number
     } else if (node.type === "End") {
       // Only report orphan 'struct.end' when the End node is a top-level child
       // (i.e., parent is Document or undefined). End nodes inside Blocks are valid.
-      if (!parent || parent.type === 'Document') {
-        push(node.startLine, `Found "struct.end" without a matching "struct.begin".`, vscode.DiagnosticSeverity.Error);
+        if (!parent || parent.type === 'Document') {
+          // Suppress orphan diagnostic if this end is directly followed by a header or EOF
+          const headerRegex = /^(\s*)(.+?)\s*:\s*struct\.begin(?:\s*(\{.*\}))?\s*$/;
+          const doc = document as vscode.TextDocument;
+          const lineCount = doc.lineCount;
+          const ln = node.startLine;
+          // find next non-empty line
+          let nextIdx = ln + 1;
+          while (nextIdx < lineCount && doc.lineAt(nextIdx).text.trim().length === 0) nextIdx++;
+          const nextIsHeader = nextIdx < lineCount ? headerRegex.test(doc.lineAt(nextIdx).text) : true; // EOF -> treat as ok
+          // Also suppress if this end is part of a run of consecutive top-level ends (multiple ends in row)
+          let prevIdx = ln - 1;
+          while (prevIdx >= 0 && doc.lineAt(prevIdx).text.trim().length === 0) prevIdx--;
+          const prevIsEnd = prevIdx >= 0 ? /^\s*struct\.end\s*$/.test(doc.lineAt(prevIdx).text) : false;
+          if (!nextIsHeader && !prevIsEnd) {
+            push(node.startLine, `Found "struct.end" without a matching "struct.begin".`, vscode.DiagnosticSeverity.Error);
+          }
       }
     } else if (node.type === "Property") {
       // optionally validate property indentation relative to enclosing block
