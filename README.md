@@ -1,13 +1,28 @@
 # STALKER 2 CFG Struct Validator VS Code Extension
 
-A lightweight Visual Studio Code extension for validating Stalker 2 CFG file formats that use `struct.begin`/`struct.end` blocks. The extension checks for proper block nesting, indentation, and header parameter formatting, providing real-time diagnostics to help you catch mistakes as you code.
+A lightweight Visual Studio Code extension for validating Stalker 2 CFG file formats that use `struct.begin`/`struct.end` blocks. The extension builds an Abstract Syntax Tree (AST) to validate block structure, indentation, and parameter formatting, providing real-time diagnostics to help you catch mistakes as you code.
 
 ## Features
 
-- **Block Matching:** Ensures every `struct.begin` has a corresponding `struct.end`.
-- **Indentation Checks:** Verifies that all content inside blocks is indented at least 2 extra spaces relative to the block header.
-- **Parameter Validation:** Validates that optional parameters in block headers are enclosed in `{ }` and follow a key=value syntax.
-- **Nested Blocks Support:** Supports validation of arbitrarily nested blocks.
+- **AST-Based Validation:** Uses a robust two-pass parser to build and validate the document structure.
+- **Block Matching:** Ensures every `struct.begin` has a corresponding `struct.end` through proper AST construction.
+- **Indentation Checks:** Verifies that all content inside blocks is properly indented relative to their parent blocks.
+- **Enhanced Parameter Handling:**
+  - Supports inline parameters in block headers: `BlockName : struct.begin {key=value}`
+  - Recognizes standalone parameter lines: `{bskipref}`
+  - Handles array notation: `[*]` and `[0]` index formats
+  - Supports parameters on property lines: `[*] = empty {bskipref}`
+- **Tab Support:** Configurable tab width (defaults to 3 spaces) for proper indentation validation
+- **Nested Blocks:** Full support for arbitrarily nested block structures
+- **Document Symbols:** Provides outline view of the cfg file structure
+- **Code Folding:** Supports collapsing/expanding block structures
+
+## Configuration
+
+The extension supports the following settings:
+
+- `stalker2CfgValidator.indentLevel`: Number of spaces for content indentation (default: 3)
+- `stalker2CfgValidator.tabWidth`: Number of spaces a tab character represents (default: 3)
 
 ## Requirements
 
@@ -72,3 +87,25 @@ If you have a packaged VSIX file:
 3. Type and select **Extensions: Install from VSIX...**.
 4. Navigate to and select the downloaded `.vsix` file.
 
+## File Format Support
+
+The extension recognizes the following syntax patterns:
+
+```cfg
+BlockName : struct.begin {optional_params}
+   Property = Value
+   ArrayItem[*] = Value {optional_params}
+   
+   NestedBlock : struct.begin
+      [0] : struct.begin
+         Content = Value
+      struct.end
+   struct.end
+struct.end
+```
+
+Special handling is provided for:
+- Array indices: `[*]` or `[0]` notation
+- Standalone parameter lines: `{bskipref}`
+- Property parameters: `PropertyName = Value {params}`
+- Multi-line parameter blocks
