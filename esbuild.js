@@ -3,22 +3,19 @@ import { context } from "esbuild";
 const production = process.argv.includes("--production");
 const watch = process.argv.includes("--watch");
 
-async function main() {
+async function buildSingle(entry, outfile) {
   const ctx = await context({
-    entryPoints: ["src/extension.ts"],
+    entryPoints: [entry],
     bundle: true,
     format: "cjs",
     minify: production,
     sourcemap: !production,
     sourcesContent: false,
     platform: "node",
-    outfile: "out/extension.cjs",
+    outfile,
     external: ["vscode"],
     logLevel: "warning",
-    plugins: [
-      /* add to the end of plugins array */
-      esbuildProblemMatcherPlugin,
-    ],
+    plugins: [esbuildProblemMatcherPlugin],
   });
   if (watch) {
     await ctx.watch();
@@ -26,6 +23,12 @@ async function main() {
     await ctx.rebuild();
     await ctx.dispose();
   }
+}
+
+async function main() {
+  // Build extension and AST builder bundle so a small runner can import the AST code.
+  await buildSingle("src/extension.ts", "out/extension.cjs");
+  await buildSingle("src/astBuilder.ts", "out/astBuilder.cjs");
 }
 
 /**

@@ -9,6 +9,7 @@ out/
 
 # Build artifacts
 *.vsix
+*.formatted*
 
 # Logs
 npm-debug.log*

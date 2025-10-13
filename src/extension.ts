@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { validateDocument, formatDocument } from "./astBuilder";
 
 /**
  * Domain and configuration interfaces
@@ -347,16 +348,8 @@ let diagnosticTimeout: NodeJS.Timeout | undefined;
  * Updates diagnostics by processing the document.
  */
 function updateDiagnostics(document: vscode.TextDocument, diagnosticCollection: vscode.DiagnosticCollection): void {
-  const state: ProcessingState = {
-    edits: [],
-    diagnostics: [],
-    stack: [],
-    indentLevel: indentationService.getIndentLevel(),
-    document,
-  };
-
-  processor.process(document, state);
-  diagnosticCollection.set(document.uri, state.diagnostics);
+  const diagnostics = validateDocument(document);
+  diagnosticCollection.set(document.uri, diagnostics);
 }
 
 /**
@@ -400,15 +393,7 @@ export function activate(context: vscode.ExtensionContext) {
         options: vscode.FormattingOptions,
         token: vscode.CancellationToken
       ): vscode.TextEdit[] {
-        const state: ProcessingState = {
-          edits: [],
-          diagnostics: [],
-          stack: [],
-          indentLevel: indentationService.getIndentLevel(),
-          document,
-        };
-        processor.process(document, state);
-        return state.edits;
+        return formatDocument(document, indentationService.getIndentLevel());
       },
     })
   );
