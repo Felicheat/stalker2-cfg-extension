@@ -63,6 +63,12 @@
           "default": 3,
           "description": "The number of spaces to indent content within each block."
         }
+      ,
+      "stalker2CfgValidator.tabWidth": {
+        "type": "number",
+        "default": 3,
+        "description": "How many spaces a tab character represents when computing indentation rules."
+      }
       }
     }
   },

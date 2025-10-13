@@ -30,6 +30,18 @@ interface Token {
   end: number;
 }
 
+// Treat tabs as N spaces when computing indentation (default 3)
+const TAB_WIDTH = 3;
+function countIndentFromText(s: string, tabWidth: number = TAB_WIDTH): number {
+  let count = 0;
+  for (const ch of s) {
+    if (ch === ' ') count += 1;
+    else if (ch === '\t') count += tabWidth;
+    else break;
+  }
+  return count;
+}
+
 function tokenize(document: vscode.TextDocument): Token[][] {
   const result: Token[][] = [];
   for (let i = 0; i < document.lineCount; i++) {
@@ -75,18 +87,34 @@ function tokenize(document: vscode.TextDocument): Token[][] {
         continue;
       }
       if (ch === "[") {
-        lineTokens.push({ type: "LBRACKET", text: "[", line: i, start: j, end: j + 1 });
-        j++;
-        continue;
-      }
-      if (ch === "]") {
-        lineTokens.push({ type: "RBRACKET", text: "]", line: i, start: j, end: j + 1 });
-        j++;
-        continue;
+        // capture bracketed identifier like [0] or [*] or [name]
+        const endIdx = lineText.indexOf(']', j + 1);
+        if (endIdx >= 0) {
+          const txt = lineText.slice(j, endIdx + 1);
+          lineTokens.push({ type: "IDENT", text: txt, line: i, start: j, end: endIdx + 1 });
+          j = endIdx + 1;
+          continue;
+        } else {
+          lineTokens.push({ type: "OTHER", text: ch, line: i, start: j, end: j + 1 });
+          j++;
+          continue;
+        }
       }
 
-      // identifier (including bracketed indices) or other sequences
-      const identMatch = /^[A-Za-z_\[\]][A-Za-z0-9_\[\]\-]*/.exec(lineText.slice(j));
+      // capture params token if we have a brace pair on the same line (e.g. {refkey=...})
+      if (ch === '{') {
+        const endIdx = lineText.indexOf('}', j + 1);
+        if (endIdx >= 0 && endIdx < processUpTo) {
+          const txt = lineText.slice(j, endIdx + 1);
+          // push as PARAMS token so parser can consume it specially
+          lineTokens.push({ type: "OTHER", text: txt, line: i, start: j, end: endIdx + 1 });
+          j = endIdx + 1;
+          continue;
+        }
+      }
+
+      // identifier or other sequences
+      const identMatch = /^[A-Za-z_][A-Za-z0-9_\-]*/.exec(lineText.slice(j));
       if (identMatch) {
         const txt = identMatch[0];
         lineTokens.push({ type: "IDENT", text: txt, line: i, start: j, end: j + txt.length });
@@ -110,139 +138,256 @@ function tokenize(document: vscode.TextDocument): Token[][] {
 }
 
 // Build a simple AST from tokens. Keeps stack of open blocks.
-export function buildAST(document: vscode.TextDocument): DocumentNode {
+export function buildAST(document: vscode.TextDocument, tabWidth: number = TAB_WIDTH, indentLevel: number = 2): DocumentNode {
   const lineTokens = tokenize(document);
+  const lines = document.lineCount;
   const root: DocumentNode = { type: "Document", startLine: 0, children: [] };
-  const stack: BlockNode[] = [];
 
-  for (let i = 0; i < lineTokens.length; i++) {
-    const tokens = lineTokens[i];
+  type BeginRec = { startLine: number; name: string; indent: number; paramsRaw?: string; params?: Record<string,string>; endLine?: number };
+  const begins: BeginRec[] = [];
+  const beginStack: number[] = [];
+  const orphanEnds: number[] = [];
+  const skipLines = new Set<number>();
+
+  const headerRegex = /^(\s*)(.+?)\s*:\s*struct\.begin(?:\s*(\{.*\}))?/;
+
+  // First pass: collect begins and pair with ends using a stack
+  for (let i = 0; i < lines; i++) {
     const text = document.lineAt(i).text;
     if (text.trim().length === 0) continue;
-
-    // skip comment-only lines
-    if (tokens.length === 0) continue;
-
-    // Helper to find token by sequence
-    const tok = (idx: number) => (idx >= 0 && idx < tokens.length ? tokens[idx] : undefined);
-
-    // detect header: IDENT COLON IDENT('struct') DOT IDENT('begin') [LBRACE ... RBRACE]
-    const first = tok(0);
-    const second = tok(1);
-    if (
-      first && second &&
-      first.type === "IDENT" &&
-      second.type === "COLON"
-    ) {
-      // scan for struct.begin after colon
-      // find index of IDENT 'struct'
-      const structIdx = tokens.findIndex(t => t.type === "IDENT" && t.text === "struct");
-      const dotIdx = structIdx >= 0 ? structIdx + 1 : -1;
-      const beginIdx = dotIdx >= 0 ? dotIdx + 1 : -1;
-      if (structIdx >= 0 && tok(dotIdx) && tok(beginIdx) && tok(dotIdx)!.type === "DOT" && tok(beginIdx)!.type === "IDENT" && tok(beginIdx)!.text === "begin") {
-        const name = first.text;
-        // optionally extract params between braces as raw substring
-        const lbrace = tokens.find(t => t.type === "LBRACE");
-        const rbrace = tokens.find(t => t.type === "RBRACE");
-        const paramsRaw = lbrace && rbrace ? text.slice(lbrace.start, rbrace.end) : undefined;
-        // parse paramsRaw like { key=value, other=val }
-        let paramsObj: Record<string, string> | undefined = undefined;
-        if (paramsRaw) {
-          try {
-            const inner = paramsRaw.slice(1, -1).trim();
-            if (inner.length > 0) {
-              paramsObj = {};
-              const parts = inner.split(",").map(p => p.trim()).filter(Boolean);
-              for (const part of parts) {
-                const eq = part.indexOf("=");
-                if (eq <= 0) {
-                  // leave malformed value as-is; validation will catch
-                  paramsObj[part] = "";
-                } else {
-                  const k = part.slice(0, eq).trim();
-                  const v = part.slice(eq + 1).trim();
-                  paramsObj[k] = v;
-                }
-              }
+    // detect struct.begin
+    if (text.includes('struct.begin')) {
+      // try regex first to capture inline params
+      const m = text.match(headerRegex);
+      let name = '';
+      let paramsRaw: string | undefined = undefined;
+      let indent = countIndentFromText(text, tabWidth);
+      if (m) {
+        indent = countIndentFromText(m[1], tabWidth);
+        name = m[2].trim();
+        paramsRaw = m[3];
+      } else {
+        // fallback: use tokens to find name left of 'struct'
+        const tokens = lineTokens[i] || [];
+        const structIdx = tokens.findIndex(t => t.type === 'IDENT' && t.text === 'struct');
+        if (structIdx > 0) {
+          const colonIdx = tokens.findIndex(t => t.type === 'COLON');
+          const nameTokens = (colonIdx >= 0 && colonIdx < structIdx) ? tokens.slice(0, colonIdx) : tokens.slice(0, structIdx);
+          name = nameTokens.map(t => t.text).join('').trim();
+        }
+      }
+      // if params not inline, look ahead for brace-only block up to 5 lines
+      if (!paramsRaw) {
+        let acc = '';
+        let open = 0;
+        let found = false;
+        // lookahead window: up to 5 lines (configurable by constant)
+        const WINDOW = 5;
+        for (let look = i+1; look < Math.min(lines, i + 1 + WINDOW); look++) {
+          const nxt = document.lineAt(look).text;
+          if (nxt.trim().length === 0) continue;
+          const firstNon = nxt.trimStart()[0];
+          // ensure the param block respects indentation (must be at least header indent)
+          const nxtIndent = countIndentFromText(nxt, tabWidth);
+          if (firstNon !== '{' && open === 0) break;
+          if (firstNon === '{' && nxtIndent < indent) break;
+          for (const ch of nxt) {
+            acc += ch;
+            if (ch === '{') open++;
+            if (ch === '}') {
+              open = Math.max(0, open-1);
+              if (open === 0) { found = true; break; }
             }
-          } catch {
-            paramsObj = undefined;
+          }
+          if (found) {
+            paramsRaw = acc;
+            for (let s = i+1; s <= look; s++) skipLines.add(s);
+            break;
           }
         }
-
-        const headerNode: HeaderNode = {
-          type: "Header",
-          startLine: i,
-          name,
-          params: paramsObj,
-          paramsRaw: paramsRaw,
-          indent: document.lineAt(i).firstNonWhitespaceCharacterIndex,
-        };
-        const block: BlockNode = {
-          type: "Block",
-          startLine: i,
-          header: headerNode,
-          children: [],
-          headerIndent: headerNode.indent,
-          requiredContentIndent: headerNode.indent + 2,
-        };
-        if (stack.length === 0) root.children.push(block);
-        else stack[stack.length - 1].children.push(block);
-        stack.push(block);
-        continue;
       }
-    }
-
-    // detect end: IDENT('struct') DOT IDENT('end') anywhere on the line
-    const structTokenIdx = tokens.findIndex(t => t.type === "IDENT" && t.text === "struct");
-    if (structTokenIdx >= 0) {
-      const dot = tokens[structTokenIdx + 1];
-      const endTok = tokens[structTokenIdx + 2];
-      if (dot && dot.type === "DOT" && endTok && endTok.type === "IDENT" && endTok.text === "end") {
-        const indent = document.lineAt(i).firstNonWhitespaceCharacterIndex;
-        const endNode: EndNode = { type: "End", startLine: i, indent };
-        if (stack.length === 0) {
-          root.children.push(endNode);
-        } else {
-          const block = stack.pop()!;
-          block.endLine = i;
-          block.children.push(endNode);
+      // Additionally: accept brace-only lines within the header window as params
+      if (!paramsRaw) {
+        const WINDOW = 3; // allow brace-only lines within next N non-empty lines
+        let seen = 0;
+        for (let k = i+1; k < lines && seen < WINDOW; k++) {
+          const ln = document.lineAt(k).text;
+          if (ln.trim().length === 0) continue;
+          seen++;
+          const trimmed = ln.trim();
+          if (/^\{[^}]*\}$/.test(trimmed)) {
+      const nextIndent = countIndentFromText(ln, tabWidth);
+            if (nextIndent >= indent) {
+              paramsRaw = trimmed;
+              skipLines.add(k);
+              break;
+            }
+          }
         }
-        continue;
       }
+      // parse paramsRaw into params (flags as true)
+  let params: Record<string,string> | undefined = undefined;
+      if (paramsRaw) {
+        const inner = paramsRaw.replace(/^\{\s*/,'').replace(/\s*\}$/,'');
+        const parts = inner.split(',').map(p => p.trim()).filter(Boolean);
+        if (parts.length > 0) {
+          params = {};
+          for (const part of parts) {
+            const eq = part.indexOf('=');
+            if (eq <= 0) params[part] = 'true'; else params[part.slice(0,eq).trim()] = part.slice(eq+1).trim();
+          }
+        }
+      }
+      const idx = begins.length;
+      begins.push({ startLine: i, name, indent, paramsRaw, params, endLine: undefined });
+      beginStack.push(idx);
+      continue;
     }
 
-    // detect assignment: IDENT EQUAL ...
-    if (tokens.length >= 3 && tokens[0].type === "IDENT") {
-      const eqIdx = tokens.findIndex(t => t.type === "EQUAL");
-      if (eqIdx > 0) {
-        const key = tokens.slice(0, eqIdx).map(t => t.text).join("");
-        const valueText = text.slice(tokens[eqIdx].end).trim();
-        const prop: PropertyNode = { type: "Property", startLine: i, key: key.trim(), value: valueText, indent: document.lineAt(i).firstNonWhitespaceCharacterIndex };
-        if (stack.length === 0) root.children.push(prop);
-        else stack[stack.length - 1].children.push(prop);
-        continue;
+    // detect struct.end
+    if (text.includes('struct.end')) {
+      if (beginStack.length === 0) {
+        orphanEnds.push(i);
+      } else {
+        const bidx = beginStack.pop()!;
+        begins[bidx].endLine = i;
       }
+      continue;
     }
-
-    // fallback: treat as content/property with raw line text
-    const fallback: PropertyNode = { type: "Property", startLine: i, key: "_line", value: text.trim(), indent: document.lineAt(i).firstNonWhitespaceCharacterIndex };
-    if (stack.length === 0) root.children.push(fallback);
-    else stack[stack.length - 1].children.push(fallback);
   }
 
-  // any unclosed blocks: set endLine to last line
-  while (stack.length > 0) {
-    const b = stack.pop()!;
-    b.endLine = document.lineCount - 1;
+  // Build BlockNodes from begins
+  // Heuristic pass: try to match orphan ends to the most recent unmatched begin before them
+  if (orphanEnds.length > 0 && begins.length > 0) {
+    const WINDOW_LINES = 500; // allow matching up to this many lines before the end
+    const newOrphans: number[] = [];
+    for (const eLine of orphanEnds) {
+      const eIndent = countIndentFromText(document.lineAt(eLine).text, tabWidth);
+      // find unmatched begins before eLine, most recent first
+      const candidates = begins
+        .map((b, idx) => ({ ...b, idx }))
+        .filter(b => b.startLine < eLine && b.endLine == null)
+        .sort((a, b) => b.startLine - a.startLine);
+      let matched = false;
+      for (const c of candidates) {
+        const distance = eLine - c.startLine;
+        // prefer candidates within window and with indent <= end indent
+        if (distance <= WINDOW_LINES && c.indent <= eIndent) {
+          begins[c.idx].endLine = eLine;
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) {
+        // fallback: accept the most recent unmatched begin within the window regardless of indent
+        const fallback = candidates.find(c => (eLine - c.startLine) <= WINDOW_LINES);
+        if (fallback) {
+          begins[fallback.idx].endLine = eLine;
+          matched = true;
+        }
+      }
+      if (!matched) newOrphans.push(eLine);
+    }
+    // replace orphanEnds with those we couldn't match
+    orphanEnds.length = 0;
+    for (const o of newOrphans) orphanEnds.push(o);
+  }
+
+  const blocks: BlockNode[] = begins.map(b => ({ type: 'Block', startLine: b.startLine, header: { type: 'Header', startLine: b.startLine, name: b.name, params: b.params, paramsRaw: b.paramsRaw, indent: b.indent }, children: [], headerIndent: b.indent, requiredContentIndent: b.indent + indentLevel, endLine: b.endLine } as any));
+
+  // attach blocks into tree by containment (smallest enclosing parent)
+  const findParentIdx = (idx: number) => {
+    const b = begins[idx];
+    let parent: number | undefined = undefined;
+    for (let j = 0; j < begins.length; j++) {
+      if (j === idx) continue;
+      const p = begins[j];
+      const pEnd = p.endLine == null ? Infinity : p.endLine;
+      const bEnd = b.endLine == null ? Infinity : b.endLine;
+      if (p.startLine < b.startLine && pEnd >= bEnd) {
+        if (parent == null) parent = j; else if (begins[parent].startLine < p.startLine) parent = j;
+      }
+    }
+    return parent;
+  };
+
+  const blockNodes: BlockNode[] = blocks;
+  for (let i = 0; i < begins.length; i++) {
+    const pidx = findParentIdx(i);
+    if (pidx == null) {
+      root.children.push(blockNodes[i]);
+    } else {
+      blockNodes[pidx].children.push(blockNodes[i]);
+    }
+  }
+
+  // helper to find containing block (deepest) for a given line
+  const findContainingBlock = (line: number): BlockNode | undefined => {
+    let chosen: BlockNode | undefined = undefined;
+    const visit = (nodes: BlockNode[]) => {
+      for (const b of nodes) {
+        if ((b as any).type !== 'Block') continue;
+        const start = (b as any).startLine;
+        const end = (b as any).endLine == null ? Infinity : (b as any).endLine;
+        if (start < line && line < end) {
+          chosen = b;
+          if (Array.isArray((b as any).children) && (b as any).children.length > 0) {
+            visit((b as any).children as BlockNode[]);
+          }
+          return;
+        }
+      }
+    };
+    visit(root.children as BlockNode[]);
+    return chosen;
+  };
+
+  // Second pass: attach properties and explicit EndNodes
+  for (let i = 0; i < lines; i++) {
+    if (skipLines.has(i)) continue;
+    const text = document.lineAt(i).text;
+    if (text.trim().length === 0) continue;
+    // skip header lines
+    if (begins.some(b => b.startLine === i)) continue;
+    // explicit end lines that closed a begin
+    const endOwner = begins.findIndex(b => b.endLine === i);
+    if (endOwner >= 0) {
+      const indent = countIndentFromText(document.lineAt(i).text, tabWidth);
+      const endNode: EndNode = { type: 'End', startLine: i, indent };
+      const container = findContainingBlock(i);
+      if (container) container.children.push(endNode); else root.children.push(endNode);
+      continue;
+    }
+    // orphan end
+    if (orphanEnds.includes(i)) {
+      const indent = countIndentFromText(document.lineAt(i).text, tabWidth);
+      const endNode: EndNode = { type: 'End', startLine: i, indent };
+      root.children.push(endNode);
+      continue;
+    }
+    // property assignment
+    const tokens = lineTokens[i] || [];
+    const eqIdx = tokens.findIndex(t => t.type === 'EQUAL');
+    if (eqIdx > 0) {
+      const key = tokens.slice(0, eqIdx).map(t => t.text).join('');
+      const valueText = document.lineAt(i).text.slice(tokens[eqIdx].end).trim();
+      const prop: PropertyNode = { type: 'Property', startLine: i, key: key.trim(), value: valueText, indent: countIndentFromText(document.lineAt(i).text, tabWidth) };
+      const container = findContainingBlock(i);
+      if (container) container.children.push(prop); else root.children.push(prop);
+      continue;
+    }
+    // fallback line content
+    const fallback: PropertyNode = { type: 'Property', startLine: i, key: '_line', value: text.trim(), indent: countIndentFromText(document.lineAt(i).text, tabWidth) };
+    const container = findContainingBlock(i);
+    if (container) container.children.push(fallback); else root.children.push(fallback);
   }
 
   return root;
 }
 
 // Validate AST and return diagnostics. Uses basic rules similar to previous logic.
-export function validateDocument(document: vscode.TextDocument): vscode.Diagnostic[] {
-  const ast = buildAST(document);
+export function validateDocument(document: vscode.TextDocument, tabWidth: number = TAB_WIDTH, indentLevel: number = 2): vscode.Diagnostic[] {
+  const ast = buildAST(document, tabWidth, indentLevel);
   const diagnostics: vscode.Diagnostic[] = [];
 
   function push(line: number, message: string, severity: vscode.DiagnosticSeverity) {
@@ -281,15 +426,11 @@ export function validateDocument(document: vscode.TextDocument): vscode.Diagnost
       // check children recursively
       for (const c of node.children) checkNode(c, node);
     } else if (node.type === "End") {
-      // top-level end diagnostic
-      // if no corresponding block around it, warn
-      // (we detect orphan ends because buildAST attaches EndNode to root if orphan)
-      // find previous sibling in ast
-      // simple heuristic: if parent is Document and it's an End node that's not inside a block
-      // We'll report orphan ends attached to root.
-      // Implementation: handled in buildAST where orphan EndNodes are direct children of root
-      // so check here:
-      push(node.startLine, `Found "struct.end" without a matching "struct.begin".`, vscode.DiagnosticSeverity.Error);
+      // Only report orphan 'struct.end' when the End node is a top-level child
+      // (i.e., parent is Document or undefined). End nodes inside Blocks are valid.
+      if (!parent || parent.type === 'Document') {
+        push(node.startLine, `Found "struct.end" without a matching "struct.begin".`, vscode.DiagnosticSeverity.Error);
+      }
     } else if (node.type === "Property") {
       // optionally validate property indentation relative to enclosing block
       if (parent && parent.type === "Block") {
@@ -308,15 +449,18 @@ export function validateDocument(document: vscode.TextDocument): vscode.Diagnost
 }
 
 // Format document: produce TextEdits similar to previous formatter.
-export function formatDocument(document: vscode.TextDocument, indentLevel: number = 2): vscode.TextEdit[] {
-  const ast = buildAST(document);
+export function formatDocument(document: vscode.TextDocument, indentLevel: number = 2, tabWidth: number = TAB_WIDTH): vscode.TextEdit[] {
+  const ast = buildAST(document, tabWidth, indentLevel);
   const edits: vscode.TextEdit[] = [];
 
   const ensureIndent = (line: number, expected: number) => {
+    // use character index for range end but compute actual indent based on tabWidth
     const text = document.lineAt(line).text;
-    const actual = document.lineAt(line).firstNonWhitespaceCharacterIndex;
+    const actualChars = document.lineAt(line).firstNonWhitespaceCharacterIndex;
+    const actual = countIndentFromText(text);
     if (actual !== expected) {
-      const range = new vscode.Range(line, 0, line, actual);
+      // Normalize replacement text to spaces of length expected
+      const range = new vscode.Range(line, 0, line, actualChars);
       edits.push(vscode.TextEdit.replace(range, " ".repeat(expected)));
     }
   };

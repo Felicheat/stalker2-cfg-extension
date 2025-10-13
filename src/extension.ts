@@ -1,4 +1,15 @@
 import * as vscode from "vscode";
+// Tab width used when interpreting tabs as spaces for indentation rules
+const TAB_WIDTH = 3;
+function countIndentFromText(s: string): number {
+  let count = 0;
+  for (const ch of s) {
+    if (ch === ' ') count += 1;
+    else if (ch === '\t') count += TAB_WIDTH;
+    else break;
+  }
+  return count;
+}
 import { validateDocument, formatDocument } from "./astBuilder";
 
 /**
@@ -56,7 +67,7 @@ class HeaderLineHandler implements ILineHandler {
 
   handle(line: vscode.TextLine, lineIndex: number, state: ProcessingState): void {
     const match = line.text.match(this.headerRegex)!;
-    const headerIndent = match[1].length;
+  const headerIndent = countIndentFromText(match[1]);
     let blockName = match[2].trim();
     const paramString = match[3];
 
@@ -77,9 +88,10 @@ class HeaderLineHandler implements ILineHandler {
     if (state.stack.length > 0) {
       expectedIndent = state.stack[state.stack.length - 1].requiredContentIndent;
     }
-    const actualIndent = line.firstNonWhitespaceCharacterIndex;
+    const actualIndentChars = line.firstNonWhitespaceCharacterIndex;
+    const actualIndent = countIndentFromText(line.text);
     if (actualIndent !== expectedIndent) {
-      const range = new vscode.Range(lineIndex, 0, lineIndex, actualIndent);
+      const range = new vscode.Range(lineIndex, 0, lineIndex, actualIndentChars);
       state.edits.push(vscode.TextEdit.replace(range, " ".repeat(expectedIndent)));
     }
 
@@ -130,9 +142,10 @@ class EndLineHandler implements ILineHandler {
   }
 
   handle(line: vscode.TextLine, lineIndex: number, state: ProcessingState): void {
-    const match = line.text.match(this.endRegex)!;
-    const endIndent = match[1].length;
-    const actualIndent = line.firstNonWhitespaceCharacterIndex;
+  const match = line.text.match(this.endRegex)!;
+  const endIndent = countIndentFromText(match[1]);
+  const actualIndentChars = line.firstNonWhitespaceCharacterIndex;
+  const actualIndent = countIndentFromText(line.text);
 
     if (state.stack.length === 0) {
       // Diagnostics: orphan struct.end
@@ -146,14 +159,14 @@ class EndLineHandler implements ILineHandler {
       );
       // Formatting: force no indent
       if (actualIndent !== 0) {
-        const range = new vscode.Range(lineIndex, 0, lineIndex, actualIndent);
+        const range = new vscode.Range(lineIndex, 0, lineIndex, actualIndentChars);
         state.edits.push(vscode.TextEdit.replace(range, ""));
       }
     } else {
       const block = state.stack.pop()!;
       // Formatting: ensure end line has same indent as header.
       if (actualIndent !== block.headerIndent) {
-        const range = new vscode.Range(lineIndex, 0, lineIndex, actualIndent);
+        const range = new vscode.Range(lineIndex, 0, lineIndex, actualIndentChars);
         state.edits.push(vscode.TextEdit.replace(range, " ".repeat(block.headerIndent)));
       }
       // Diagnostics: check end indent matches header.
@@ -183,10 +196,11 @@ class ContentLineHandler implements ILineHandler {
   handle(line: vscode.TextLine, lineIndex: number, state: ProcessingState): void {
     if (state.stack.length > 0) {
       const expectedIndent = state.stack[state.stack.length - 1].requiredContentIndent;
-      const actualIndent = line.firstNonWhitespaceCharacterIndex;
+      const actualIndentChars = line.firstNonWhitespaceCharacterIndex;
+      const actualIndent = countIndentFromText(line.text);
       // Formatting: adjust content indent
       if (actualIndent !== expectedIndent) {
-        const range = new vscode.Range(lineIndex, 0, lineIndex, actualIndent);
+        const range = new vscode.Range(lineIndex, 0, lineIndex, actualIndentChars);
         state.edits.push(vscode.TextEdit.replace(range, " ".repeat(expectedIndent)));
       }
       // Diagnostics: warn if content underindented
@@ -348,7 +362,15 @@ let diagnosticTimeout: NodeJS.Timeout | undefined;
  * Updates diagnostics by processing the document.
  */
 function updateDiagnostics(document: vscode.TextDocument, diagnosticCollection: vscode.DiagnosticCollection): void {
-  const diagnostics = validateDocument(document);
+  // Only validate files with .cfg extension (case-insensitive)
+  const path = document.uri.fsPath || document.fileName || '';
+  if (!/\.cfg$/i.test(path)) {
+    // clear diagnostics for non-cfg files
+    diagnosticCollection.set(document.uri, []);
+    return;
+  }
+  const tabWidth = vscode.workspace.getConfiguration('stalker2CfgValidator').get<number>('tabWidth', TAB_WIDTH);
+  const diagnostics = validateDocument(document, tabWidth);
   diagnosticCollection.set(document.uri, diagnostics);
 }
 
@@ -359,8 +381,9 @@ export function activate(context: vscode.ExtensionContext) {
   const diagnosticCollection = vscode.languages.createDiagnosticCollection("stalker2CfgValidator");
 
   // Incremental diagnostics with debouncing.
-  if (vscode.window.activeTextEditor) {
-    updateDiagnostics(vscode.window.activeTextEditor.document, diagnosticCollection);
+    if (vscode.window.activeTextEditor) {
+    const doc = vscode.window.activeTextEditor.document;
+    if (/\.cfg$/i.test(doc.uri.fsPath || doc.fileName || '')) updateDiagnostics(doc, diagnosticCollection);
   }
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((e) => {
@@ -368,20 +391,20 @@ export function activate(context: vscode.ExtensionContext) {
         clearTimeout(diagnosticTimeout);
       }
       diagnosticTimeout = setTimeout(() => {
-        updateDiagnostics(e.document, diagnosticCollection);
+        if (/\.cfg$/i.test(e.document.uri.fsPath || e.document.fileName || '')) updateDiagnostics(e.document, diagnosticCollection);
       }, 300);
     })
   );
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor) {
-        updateDiagnostics(editor.document, diagnosticCollection);
+        if (/\.cfg$/i.test(editor.document.uri.fsPath || editor.document.fileName || '')) updateDiagnostics(editor.document, diagnosticCollection);
       }
     })
   );
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((doc) => {
-      updateDiagnostics(doc, diagnosticCollection);
+      if (/\.cfg$/i.test(doc.uri.fsPath || doc.fileName || '')) updateDiagnostics(doc, diagnosticCollection);
     })
   );
 
@@ -393,7 +416,8 @@ export function activate(context: vscode.ExtensionContext) {
         options: vscode.FormattingOptions,
         token: vscode.CancellationToken
       ): vscode.TextEdit[] {
-        return formatDocument(document, indentationService.getIndentLevel());
+        const tabWidth = vscode.workspace.getConfiguration('stalker2CfgValidator').get<number>('tabWidth', TAB_WIDTH);
+        return formatDocument(document, indentationService.getIndentLevel(), tabWidth);
       },
     })
   );
