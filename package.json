@@ -2,7 +2,7 @@
   "name": "stalker2-cfg-validator",
   "displayName": "STALKER 2 CFG Struct Validator",
   "description": "A lightweight VS Code extension for validating STALKER 2's struct.begin/struct.end blocks.",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "author": "Felicheat",
   "type": "module",
   "engines": {

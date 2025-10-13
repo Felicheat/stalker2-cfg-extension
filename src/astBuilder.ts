@@ -368,8 +368,46 @@ export function buildAST(document: vscode.TextDocument, tabWidth: number = TAB_W
     const eqIdx = tokens.findIndex(t => t.type === 'EQUAL');
     if (eqIdx > 0) {
       const key = tokens.slice(0, eqIdx).map(t => t.text).join('');
-      const valueText = document.lineAt(i).text.slice(tokens[eqIdx].end).trim();
-      const prop: PropertyNode = { type: 'Property', startLine: i, key: key.trim(), value: valueText, indent: countIndentFromText(document.lineAt(i).text, tabWidth) };
+      let valueText = document.lineAt(i).text.slice(tokens[eqIdx].end).trim();
+      let propParamsRaw: string | undefined = undefined;
+      // check for inline trailing {..} in the value
+      const trailingMatch = valueText.match(/^(.*?)(\{\s*[^}]*\s*\})\s*$/);
+      if (trailingMatch) {
+        valueText = trailingMatch[1].trim();
+        propParamsRaw = trailingMatch[2];
+      } else {
+        // lookahead for brace-only lines immediately after property (small window)
+        const WINDOW = 2;
+        const propIndent = countIndentFromText(document.lineAt(i).text, tabWidth);
+        let seen = 0;
+        for (let k = i+1; k < lines && seen < WINDOW; k++) {
+          const ln = document.lineAt(k).text;
+          if (ln.trim().length === 0) continue;
+          seen++;
+          const trimmed = ln.trim();
+          if (/^\{[^}]*\}$/.test(trimmed)) {
+            const nextIndent = countIndentFromText(ln, tabWidth);
+            if (nextIndent >= propIndent) {
+              propParamsRaw = trimmed;
+              skipLines.add(k);
+              break;
+            }
+          }
+        }
+      }
+
+      const prop: PropertyNode = { type: 'Property', startLine: i, key: key.trim(), value: valueText, indent: countIndentFromText(document.lineAt(i).text, tabWidth), paramsRaw: propParamsRaw };
+      if (propParamsRaw) {
+        const inner = propParamsRaw.replace(/^\{\s*/,'').replace(/\s*\}$/,'');
+        const parts = inner.split(',').map(p => p.trim()).filter(Boolean);
+        if (parts.length > 0) {
+          prop.params = {};
+          for (const part of parts) {
+            const eq = part.indexOf('=');
+            if (eq <= 0) prop.params[part] = 'true'; else prop.params[part.slice(0,eq).trim()] = part.slice(eq+1).trim();
+          }
+        }
+      }
       const container = findContainingBlock(i);
       if (container) container.children.push(prop); else root.children.push(prop);
       continue;

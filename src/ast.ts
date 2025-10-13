@@ -29,6 +29,8 @@ export interface PropertyNode extends ASTNode {
   key: string;
   value: string;
   indent: number;
+  paramsRaw?: string;
+  params?: Params;
 }
 
 export interface BlockNode extends ASTNode {
