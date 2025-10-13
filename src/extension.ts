@@ -1,11 +1,21 @@
 import * as vscode from "vscode";
-// Tab width used when interpreting tabs as spaces for indentation rules
-const TAB_WIDTH = 3;
+
+// Default tab width from settings with fallback
+const DEFAULT_TAB_WIDTH = 3;
+
+// Get tab width from configuration or use default
+function getTabWidth(): number {
+  const config = vscode.workspace.getConfiguration("stalker2CfgValidator");
+  return config.get<number>("tabWidth", DEFAULT_TAB_WIDTH);
+}
+
+// Replace the existing TAB_WIDTH constant with a function call
+const TAB_WIDTH = getTabWidth();
 function countIndentFromText(s: string): number {
   let count = 0;
   for (const ch of s) {
-    if (ch === ' ') count += 1;
-    else if (ch === '\t') count += TAB_WIDTH;
+    if (ch === " ") count += 1;
+    else if (ch === "\t") count += TAB_WIDTH;
     else break;
   }
   return count;
@@ -32,7 +42,7 @@ interface IIndentationService {
 class IndentationService implements IIndentationService {
   getIndentLevel(): number {
     const config = vscode.workspace.getConfiguration("stalker2CfgValidator");
-    return config.get<number>("indentLevel", 2);
+    return config.get<number>("indentLevel", 3);
   }
 }
 
@@ -67,7 +77,7 @@ class HeaderLineHandler implements ILineHandler {
 
   handle(line: vscode.TextLine, lineIndex: number, state: ProcessingState): void {
     const match = line.text.match(this.headerRegex)!;
-  const headerIndent = countIndentFromText(match[1]);
+    const headerIndent = countIndentFromText(match[1]);
     let blockName = match[2].trim();
     const paramString = match[3];
 
@@ -142,10 +152,10 @@ class EndLineHandler implements ILineHandler {
   }
 
   handle(line: vscode.TextLine, lineIndex: number, state: ProcessingState): void {
-  const match = line.text.match(this.endRegex)!;
-  const endIndent = countIndentFromText(match[1]);
-  const actualIndentChars = line.firstNonWhitespaceCharacterIndex;
-  const actualIndent = countIndentFromText(line.text);
+    const match = line.text.match(this.endRegex)!;
+    const endIndent = countIndentFromText(match[1]);
+    const actualIndentChars = line.firstNonWhitespaceCharacterIndex;
+    const actualIndent = countIndentFromText(line.text);
 
     if (state.stack.length === 0) {
       // Diagnostics: orphan struct.end
@@ -363,13 +373,13 @@ let diagnosticTimeout: NodeJS.Timeout | undefined;
  */
 function updateDiagnostics(document: vscode.TextDocument, diagnosticCollection: vscode.DiagnosticCollection): void {
   // Only validate files with .cfg extension (case-insensitive)
-  const path = document.uri.fsPath || document.fileName || '';
+  const path = document.uri.fsPath || document.fileName || "";
   if (!/\.cfg$/i.test(path)) {
     // clear diagnostics for non-cfg files
     diagnosticCollection.set(document.uri, []);
     return;
   }
-  const tabWidth = vscode.workspace.getConfiguration('stalker2CfgValidator').get<number>('tabWidth', TAB_WIDTH);
+  const tabWidth = vscode.workspace.getConfiguration("stalker2CfgValidator").get<number>("tabWidth", TAB_WIDTH);
   const diagnostics = validateDocument(document, tabWidth);
   diagnosticCollection.set(document.uri, diagnostics);
 }
@@ -381,9 +391,9 @@ export function activate(context: vscode.ExtensionContext) {
   const diagnosticCollection = vscode.languages.createDiagnosticCollection("stalker2CfgValidator");
 
   // Incremental diagnostics with debouncing.
-    if (vscode.window.activeTextEditor) {
+  if (vscode.window.activeTextEditor) {
     const doc = vscode.window.activeTextEditor.document;
-    if (/\.cfg$/i.test(doc.uri.fsPath || doc.fileName || '')) updateDiagnostics(doc, diagnosticCollection);
+    if (/\.cfg$/i.test(doc.uri.fsPath || doc.fileName || "")) updateDiagnostics(doc, diagnosticCollection);
   }
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((e) => {
@@ -391,20 +401,22 @@ export function activate(context: vscode.ExtensionContext) {
         clearTimeout(diagnosticTimeout);
       }
       diagnosticTimeout = setTimeout(() => {
-        if (/\.cfg$/i.test(e.document.uri.fsPath || e.document.fileName || '')) updateDiagnostics(e.document, diagnosticCollection);
+        if (/\.cfg$/i.test(e.document.uri.fsPath || e.document.fileName || ""))
+          updateDiagnostics(e.document, diagnosticCollection);
       }, 300);
     })
   );
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor) {
-        if (/\.cfg$/i.test(editor.document.uri.fsPath || editor.document.fileName || '')) updateDiagnostics(editor.document, diagnosticCollection);
+        if (/\.cfg$/i.test(editor.document.uri.fsPath || editor.document.fileName || ""))
+          updateDiagnostics(editor.document, diagnosticCollection);
       }
     })
   );
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((doc) => {
-      if (/\.cfg$/i.test(doc.uri.fsPath || doc.fileName || '')) updateDiagnostics(doc, diagnosticCollection);
+      if (/\.cfg$/i.test(doc.uri.fsPath || doc.fileName || "")) updateDiagnostics(doc, diagnosticCollection);
     })
   );
 
@@ -416,7 +428,7 @@ export function activate(context: vscode.ExtensionContext) {
         options: vscode.FormattingOptions,
         token: vscode.CancellationToken
       ): vscode.TextEdit[] {
-        const tabWidth = vscode.workspace.getConfiguration('stalker2CfgValidator').get<number>('tabWidth', TAB_WIDTH);
+        const tabWidth = vscode.workspace.getConfiguration("stalker2CfgValidator").get<number>("tabWidth", TAB_WIDTH);
         return formatDocument(document, indentationService.getIndentLevel(), tabWidth);
       },
     })

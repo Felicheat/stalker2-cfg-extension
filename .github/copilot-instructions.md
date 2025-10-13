@@ -62,12 +62,14 @@ AST-based parsing (recommended migration notes)
 - Why: the current implementation uses line-based handlers and regexes in `src/extension.ts`. Moving to an AST makes parsing, validation, formatting, and future features (autocomplete/schema validation) more robust and testable.
 
 - Mapping existing handlers to AST node types (concrete):
+
   - `HeaderLineHandler` -> HeaderNode (represents `name: struct.begin {params}` with fields: `name`, `params`, `headerIndent`, `line`)
   - `EndLineHandler` -> EndNode (represents `struct.end`, contains `line` and indent)
   - `ContentLineHandler` -> PropertyNode / ContentNode (assignments, values, or nested block content)
   - `DocumentProcessor` -> Parser/ASTBuilder (iterates lines or tokens and emits an AST root `DocumentNode` with children)
 
 - Concrete migration steps:
+
   1. Add a small AST module (e.g., `src/ast.ts`) that defines node interfaces/classes: `DocumentNode`, `BlockNode`, `HeaderNode`, `EndNode`, `PropertyNode`, and a `Token` type with `text`, `start`, `end`, `line`.
   2. Implement a tokenizer that converts document text into token stream (identifiers, punctuation, keywords like `struct.begin`/`struct.end`, braces, equals, comments). A simple whitespace+regex tokenizer is sufficient to start.
   3. Replace `DocumentProcessor` with an `ASTBuilder` that consumes tokens and constructs the node hierarchy (push/pop blocks on a stack similar to current logic). Emit helpful node metadata (line numbers and indent) used by diagnostics/formatting.
@@ -75,10 +77,12 @@ AST-based parsing (recommended migration notes)
   5. Keep the existing public API (`activate`/`deactivate`) and wire the diagnostics/formatting providers to use the new AST validators/formatters. Prefer small, incremental changes: add `src/ast.ts` and a new `src/astBuilder.ts`, then switch `updateDiagnostics` to call the AST validator.
 
 - Minimal examples to include in changes:
+
   - Example token for a header: { type: 'IDENT', text: 'ItemGenerator', line: 12, start: 0 }
   - Example BlockNode: { type: 'Block', name: 'ItemGenerator', header: HeaderNode, children: [...], startLine: 12, endLine: 20 }
 
 - Tests & validation approach:
+
   - Start with small unit tests for the tokenizer and AST builder (happy path + orphan `struct.end` + missing `struct.end`).
   - Keep `npm run check-types` in the loop; add a `test` script and a minimal test harness later (Jest or plain node scripts) if desired.
 

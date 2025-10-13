@@ -46,7 +46,11 @@ export interface DocumentNode extends ASTNode {
   children: ASTNode[];
 }
 
-export function createDiagnostic(range: vscode.Range, message: string, severity: vscode.DiagnosticSeverity): vscode.Diagnostic {
+export function createDiagnostic(
+  range: vscode.Range,
+  message: string,
+  severity: vscode.DiagnosticSeverity
+): vscode.Diagnostic {
   const d = new vscode.Diagnostic(range, message, severity);
   return d;
 }

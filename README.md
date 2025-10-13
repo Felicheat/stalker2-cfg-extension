@@ -21,7 +21,6 @@ A lightweight Visual Studio Code extension for validating Stalker 2 CFG file for
 
 The extension supports the following settings:
 
-- `stalker2CfgValidator.indentLevel`: Number of spaces for content indentation (default: 3)
 - `stalker2CfgValidator.tabWidth`: Number of spaces a tab character represents (default: 3)
 
 ## Requirements
