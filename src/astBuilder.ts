@@ -1,17 +1,6 @@
 import * as vscode from "vscode";
 import { ASTNode, DocumentNode, BlockNode, HeaderNode, EndNode, PropertyNode, createDiagnostic } from "./ast";
-
-// Default tab width from settings with fallback
-const DEFAULT_TAB_WIDTH = 3;
-
-// Get tab width from configuration or use default
-function getTabWidth(): number {
-  const config = vscode.workspace.getConfiguration("stalker2CfgValidator");
-  return config.get<number>("tabWidth", DEFAULT_TAB_WIDTH);
-}
-
-// Replace the existing TAB_WIDTH constant with a function call
-const TAB_WIDTH = getTabWidth();
+import { countIndentFromText, getTabWidth } from "./config";
 
 // Token-level tokenizer. Produces tokens per line to enable richer parsing.
 type TokenType =
@@ -24,6 +13,8 @@ type TokenType =
   | "LBRACKET"
   | "RBRACKET"
   | "COMMENT"
+  | "STRING"
+  | "DOUBLE_STRING"
   | "OTHER";
 
 interface Token {
@@ -32,17 +23,6 @@ interface Token {
   line: number;
   start: number;
   end: number;
-}
-
-// Treat tabs as N spaces when computing indentation (default 3)
-function countIndentFromText(s: string, tabWidth: number = TAB_WIDTH): number {
-  let count = 0;
-  for (const ch of s) {
-    if (ch === " ") count += 1;
-    else if (ch === "\t") count += tabWidth;
-    else break;
-  }
-  return count;
 }
 
 function tokenize(document: vscode.TextDocument): Token[][] {
@@ -90,18 +70,57 @@ function tokenize(document: vscode.TextDocument): Token[][] {
         continue;
       }
       if (ch === "[") {
-        // capture bracketed identifier like [0] or [*] or [name]
-        const endIdx = lineText.indexOf("]", j + 1);
-        if (endIdx >= 0) {
-          const txt = lineText.slice(j, endIdx + 1);
-          lineTokens.push({ type: "IDENT", text: txt, line: i, start: j, end: endIdx + 1 });
-          j = endIdx + 1;
-          continue;
-        } else {
-          lineTokens.push({ type: "OTHER", text: ch, line: i, start: j, end: j + 1 });
-          j++;
-          continue;
+        lineTokens.push({ type: "LBRACKET", text: "[", line: i, start: j, end: j + 1 });
+        j++;
+        continue;
+      }
+      if (ch === "]") {
+        lineTokens.push({ type: "RBRACKET", text: "]", line: i, start: j, end: j + 1 });
+        j++;
+        continue;
+      }
+
+      // capture string literals
+      if (ch === "'") {
+        let endIdx = j + 1;
+        while (endIdx < processUpTo) {
+          if (lineText[endIdx] === "'") {
+            // check for escaped quote
+            if (endIdx + 1 < processUpTo && lineText[endIdx + 1] === "'") {
+              endIdx += 2;
+            } else {
+              endIdx++;
+              break;
+            }
+          } else {
+            endIdx++;
+          }
         }
+        const txt = lineText.slice(j, endIdx);
+        lineTokens.push({ type: "STRING", text: txt, line: i, start: j, end: endIdx });
+        j = endIdx;
+        continue;
+      }
+
+      if (ch === '"') {
+        let endIdx = j + 1;
+        while (endIdx < processUpTo) {
+          if (lineText[endIdx] === '"') {
+            // check for escaped quote
+            if (endIdx + 1 < processUpTo && lineText[endIdx + 1] === '"') {
+              endIdx += 2;
+            } else {
+              endIdx++;
+              break;
+            }
+          } else {
+            endIdx++;
+          }
+        }
+        const txt = lineText.slice(j, endIdx);
+        lineTokens.push({ type: "DOUBLE_STRING", text: txt, line: i, start: j, end: endIdx });
+        j = endIdx;
+        continue;
       }
 
       // capture params token if we have a brace pair on the same line (e.g. {refkey=...})
@@ -147,11 +166,7 @@ function tokenize(document: vscode.TextDocument): Token[][] {
 }
 
 // Build a simple AST from tokens. Keeps stack of open blocks.
-export function buildAST(
-  document: vscode.TextDocument,
-  tabWidth: number = TAB_WIDTH,
-  indentLevel: number = TAB_WIDTH
-): DocumentNode {
+export function buildAST(document: vscode.TextDocument, tabWidth: number, indentLevel: number): DocumentNode {
   const lineTokens = tokenize(document);
   const lines = document.lineCount;
   const root: DocumentNode = { type: "Document", startLine: 0, children: [] };
@@ -169,7 +184,7 @@ export function buildAST(
   const orphanEnds: number[] = [];
   const skipLines = new Set<number>();
 
-  const headerRegex = /^(\s*)(.+?)\s*:\s*struct\.begin(?:\s*(\{.*\}))?/;
+  const headerRegex = /^(\s*)(.+?)\s*:\s*struct\.begin(?:\s*(\{.*\}))?/; // Corrected regex for params
 
   // First pass: collect begins and pair with ends using a stack
   for (let i = 0; i < lines; i++) {
@@ -181,9 +196,9 @@ export function buildAST(
       const m = text.match(headerRegex);
       let name = "";
       let paramsRaw: string | undefined = undefined;
-      let indent = countIndentFromText(text, tabWidth);
+      let indent = countIndentFromText(text);
       if (m) {
-        indent = countIndentFromText(m[1], tabWidth);
+        indent = countIndentFromText(m[1]);
         name = m[2].trim();
         paramsRaw = m[3];
       } else {
@@ -212,7 +227,7 @@ export function buildAST(
           if (nxt.trim().length === 0) continue;
           const firstNon = nxt.trimStart()[0];
           // ensure the param block respects indentation (must be at least header indent)
-          const nxtIndent = countIndentFromText(nxt, tabWidth);
+          const nxtIndent = countIndentFromText(nxt);
           if (firstNon !== "{" && open === 0) break;
           if (firstNon === "{" && nxtIndent < indent) break;
           for (const ch of nxt) {
@@ -243,7 +258,7 @@ export function buildAST(
           seen++;
           const trimmed = ln.trim();
           if (/^\{[^}]*\}$/.test(trimmed)) {
-            const nextIndent = countIndentFromText(ln, tabWidth);
+            const nextIndent = countIndentFromText(ln);
             if (nextIndent >= indent) {
               paramsRaw = trimmed;
               skipLines.add(k);
@@ -293,7 +308,7 @@ export function buildAST(
     const WINDOW_LINES = 500; // allow matching up to this many lines before the end
     const newOrphans: number[] = [];
     for (const eLine of orphanEnds) {
-      const eIndent = countIndentFromText(document.lineAt(eLine).text, tabWidth);
+      const eIndent = countIndentFromText(document.lineAt(eLine).text);
       // find unmatched begins before eLine, most recent first
       const candidates = begins
         .map((b, idx) => ({ ...b, idx }))
@@ -408,7 +423,7 @@ export function buildAST(
     }
     // orphan end
     if (orphanEnds.includes(i)) {
-      const indent = countIndentFromText(document.lineAt(i).text, tabWidth);
+      const indent = countIndentFromText(document.lineAt(i).text);
       const endNode: EndNode = { type: "End", startLine: i, indent };
       root.children.push(endNode);
       continue;
@@ -431,7 +446,7 @@ export function buildAST(
       } else {
         // lookahead for brace-only lines immediately after property (small window)
         const WINDOW = 2;
-        const propIndent = countIndentFromText(document.lineAt(i).text, tabWidth);
+        const propIndent = countIndentFromText(document.lineAt(i).text);
         let seen = 0;
         for (let k = i + 1; k < lines && seen < WINDOW; k++) {
           const ln = document.lineAt(k).text;
@@ -439,7 +454,7 @@ export function buildAST(
           seen++;
           const trimmed = ln.trim();
           if (/^\{[^}]*\}$/.test(trimmed)) {
-            const nextIndent = countIndentFromText(ln, tabWidth);
+            const nextIndent = countIndentFromText(ln);
             if (nextIndent >= propIndent) {
               propParamsRaw = trimmed;
               skipLines.add(k);
@@ -454,7 +469,7 @@ export function buildAST(
         startLine: i,
         key: key.trim(),
         value: valueText,
-        indent: countIndentFromText(document.lineAt(i).text, tabWidth),
+        indent: countIndentFromText(document.lineAt(i).text),
         paramsRaw: propParamsRaw,
       };
       if (propParamsRaw) {
@@ -483,7 +498,7 @@ export function buildAST(
       startLine: i,
       key: "_line",
       value: text.trim(),
-      indent: countIndentFromText(document.lineAt(i).text, tabWidth),
+      indent: countIndentFromText(document.lineAt(i).text),
     };
     const container = findContainingBlock(i);
     if (container) container.children.push(fallback);
@@ -496,15 +511,51 @@ export function buildAST(
 // Validate AST and return diagnostics. Uses basic rules similar to previous logic.
 export function validateDocument(
   document: vscode.TextDocument,
-  tabWidth: number = TAB_WIDTH,
-  indentLevel: number = TAB_WIDTH
+  tabWidth: number,
+  indentLevel: number
 ): vscode.Diagnostic[] {
   const ast = buildAST(document, tabWidth, indentLevel);
   const diagnostics: vscode.Diagnostic[] = [];
 
-  function push(line: number, message: string, severity: vscode.DiagnosticSeverity) {
-    const range = new vscode.Range(line, 0, line, Math.max(1, document.lineAt(line).text.length));
+  function push(line: number, character: number, message: string, severity: vscode.DiagnosticSeverity) {
+    const range = new vscode.Range(line, character, line, Math.max(1, document.lineAt(line).text.length));
     diagnostics.push(createDiagnostic(range, message, severity));
+  }
+
+  const lineTokens = tokenize(document);
+  const bracketStack: Token[] = [];
+  for (const tokens of lineTokens) {
+    for (const token of tokens) {
+      if (token.type === "STRING" && !token.text.endsWith("'")) {
+        push(token.line, token.start, "Unclosed string literal.", vscode.DiagnosticSeverity.Error);
+      }
+      if (token.type === "DOUBLE_STRING" && !token.text.endsWith('"')) {
+        push(token.line, token.start, "Unclosed string literal.", vscode.DiagnosticSeverity.Error);
+      }
+      if (token.type === "LBRACE" || token.type === "LBRACKET") {
+        bracketStack.push(token);
+      } else if (token.type === "RBRACE") {
+        if (bracketStack.length === 0 || bracketStack[bracketStack.length - 1].type !== "LBRACE") {
+          push(token.line, token.start, "Unexpected closing brace.", vscode.DiagnosticSeverity.Error);
+        } else {
+          bracketStack.pop();
+        }
+      } else if (token.type === "RBRACKET") {
+        if (bracketStack.length === 0 || bracketStack[bracketStack.length - 1].type !== "LBRACKET") {
+          push(token.line, token.start, "Unexpected closing bracket.", vscode.DiagnosticSeverity.Error);
+        } else {
+          bracketStack.pop();
+        }
+      }
+    }
+  }
+  for (const token of bracketStack) {
+    push(
+      token.line,
+      token.start,
+      `Unclosed ${token.text === "{" ? "brace" : "bracket"}.`,
+      vscode.DiagnosticSeverity.Error
+    );
   }
 
   const checkNode = (node: any, parent?: any) => {
@@ -515,6 +566,7 @@ export function validateDocument(
         if (node.header.indent < expected) {
           push(
             node.startLine,
+            0,
             `Block header "${node.header.name}" should be indented at least ${expected} spaces (found ${node.header.indent}).`,
             vscode.DiagnosticSeverity.Error
           );
@@ -524,37 +576,80 @@ export function validateDocument(
       if (node.endLine == null) {
         push(
           node.startLine,
+          0,
           `Block "${node.header.name}" was not closed. Missing "struct.end".`,
           vscode.DiagnosticSeverity.Error
         );
       }
       // validate params shape if present
-      if (node.header.paramsRaw && node.header.params == null) {
-        push(
-          node.startLine,
-          `Malformed parameters for block "${node.header.name}". Expected { key=value, ... }`,
-          vscode.DiagnosticSeverity.Warning
-        );
-      } else if (node.header.params) {
-        // example rule: keys must be alphanumeric and values non-empty
-        for (const k of Object.keys(node.header.params)) {
-          if (!/^[A-Za-z0-9_\-]+$/.test(k)) {
+      if (node.header.paramsRaw) {
+        if (node.header.params == null) {
+          let hint = "Expected { key=value, ... }";
+          if (!node.header.paramsRaw.startsWith("{")) {
+            hint = "Parameters must start with an opening brace '{'.";
+          } else if (!node.header.paramsRaw.endsWith("}")) {
+            hint = "Parameters must end with a closing brace '}'.";
+          }
+          push(
+            node.startLine,
+            0,
+            `Malformed parameters for block "${node.header.name}". ${hint}`,
+            vscode.DiagnosticSeverity.Warning
+          );
+        } else {
+          // example rule: keys must be alphanumeric and values non-empty
+          for (const k of Object.keys(node.header.params)) {
+            const invalidChars = k.match(/[^A-Za-z0-9_\-]/g);
+            if (invalidChars) {
+              push(
+                node.startLine,
+                0,
+                `Parameter name "${k}" contains invalid characters: ${invalidChars.join(
+                  ", "
+                )}. Only letters, numbers, underscores, and hyphens are allowed.`,
+                vscode.DiagnosticSeverity.Warning
+              );
+            }
+            const v = node.header.params[k];
+            if (v === "") {
+              push(
+                node.startLine,
+                0,
+                `Parameter "${k}" has an empty value. This may not be intended. Consider removing it if it is not needed.`,
+                vscode.DiagnosticSeverity.Warning
+              );
+            }
+          }
+        }
+      }
+
+      // Check for out-of-order array indices
+      const arrayChildren = node.children.filter(
+        (c: any) => c.type === "Property" && c.key.startsWith("[") && c.key.endsWith("]") && c.key !== "[*]"
+      );
+      if (arrayChildren.length > 1) {
+        const indices = arrayChildren.map((c: any) => parseInt(c.key.slice(1, -1), 10));
+        for (let i = 0; i < indices.length - 1; i++) {
+          if (indices[i] > indices[i + 1]) {
             push(
-              node.startLine,
-              `Parameter name "${k}" looks invalid (allowed: A-Za-z0-9_-).`,
+              arrayChildren[i + 1].startLine,
+              0,
+              "Array elements are out of order.",
               vscode.DiagnosticSeverity.Warning
             );
+            break;
           }
-          const v = node.header.params[k];
-          if (v === "") {
+          if (indices[i] !== indices[i + 1] - 1) {
             push(
-              node.startLine,
-              `Parameter "${k}" has empty value or is malformed.`,
+              arrayChildren[i + 1].startLine,
+              0,
+              `Non-sequential array index. Expected ${indices[i] + 1} but got ${indices[i + 1]}.`,
               vscode.DiagnosticSeverity.Warning
             );
           }
         }
       }
+
       // check children recursively
       for (const c of node.children) checkNode(c, node);
     } else if (node.type === "End") {
@@ -577,18 +672,23 @@ export function validateDocument(
         if (!nextIsHeader && !prevIsEnd) {
           push(
             node.startLine,
+            0,
             `Found "struct.end" without a matching "struct.begin".`,
             vscode.DiagnosticSeverity.Error
           );
         }
       }
     } else if (node.type === "Property") {
+      if (node.value === "") {
+        push(node.startLine, 0, `Property "${node.key}" has an empty value.`, vscode.DiagnosticSeverity.Warning);
+      }
       // optionally validate property indentation relative to enclosing block
       if (parent && parent.type === "Block") {
         const expected = parent.requiredContentIndent ?? parent.headerIndent + tabWidth;
         if (node.indent < expected) {
           push(
             node.startLine,
+            0,
             `Content inside block "${parent.header.name}" should be indented at least ${expected} spaces (found ${node.indent}).`,
             vscode.DiagnosticSeverity.Warning
           );
@@ -606,8 +706,8 @@ export function validateDocument(
 // Format document: produce TextEdits similar to previous formatter.
 export function formatDocument(
   document: vscode.TextDocument,
-  indentLevel: number = TAB_WIDTH,
-  tabWidth: number = TAB_WIDTH
+  indentLevel: number,
+  tabWidth: number
 ): vscode.TextEdit[] {
   const ast = buildAST(document, tabWidth, indentLevel);
   const edits: vscode.TextEdit[] = [];

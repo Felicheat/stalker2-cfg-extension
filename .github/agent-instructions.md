@@ -93,3 +93,5 @@ AST-based parsing (recommended migration notes)
   - `package.json` (scripts and contributes)
 
 If you want, I can scaffold `src/ast.ts` + `src/astBuilder.ts` and wire the extension to use them in small steps (tokenizer, builder, validator). Which part should I implement first? (tokenizer, AST types, builder, or validator/formatter)
+
+Recommended Next Steps / Cleanup

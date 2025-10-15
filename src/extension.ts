@@ -1,272 +1,8 @@
 import * as vscode from "vscode";
 
-// Default tab width from settings with fallback
-const DEFAULT_TAB_WIDTH = 3;
-
-// Get tab width from configuration or use default
-function getTabWidth(): number {
-  const config = vscode.workspace.getConfiguration("stalker2CfgValidator");
-  return config.get<number>("tabWidth", DEFAULT_TAB_WIDTH);
-}
-
-// Replace the existing TAB_WIDTH constant with a function call
-const TAB_WIDTH = getTabWidth();
-function countIndentFromText(s: string): number {
-  let count = 0;
-  for (const ch of s) {
-    if (ch === " ") count += 1;
-    else if (ch === "\t") count += TAB_WIDTH;
-    else break;
-  }
-  return count;
-}
-import { validateDocument, formatDocument } from "./astBuilder";
-
-/**
- * Domain and configuration interfaces
- */
-interface BlockInfo {
-  name: string;
-  headerIndent: number;
-  requiredContentIndent: number;
-  line: number;
-}
-
-/**
- * Service for reading configuration settings
- */
-interface IIndentationService {
-  getIndentLevel(): number;
-}
-
-class IndentationService implements IIndentationService {
-  getIndentLevel(): number {
-    const config = vscode.workspace.getConfiguration("stalker2CfgValidator");
-    return config.get<number>("indentLevel", 3);
-  }
-}
-
-/**
- * Processing state passed during document processing.
- */
-interface ProcessingState {
-  edits: vscode.TextEdit[];
-  diagnostics: vscode.Diagnostic[];
-  stack: BlockInfo[];
-  indentLevel: number;
-  document: vscode.TextDocument;
-}
-
-/**
- * A handler interface for a single line.
- */
-interface ILineHandler {
-  canHandle(lineText: string): boolean;
-  handle(line: vscode.TextLine, lineIndex: number, state: ProcessingState): void;
-}
-
-/**
- * Handler for header lines (struct.begin)
- */
-class HeaderLineHandler implements ILineHandler {
-  private headerRegex = /^(\s*)(.+?)\s*:\s*struct\.begin(?:\s*(\{.*\}))?\s*$/;
-
-  canHandle(lineText: string): boolean {
-    return this.headerRegex.test(lineText);
-  }
-
-  handle(line: vscode.TextLine, lineIndex: number, state: ProcessingState): void {
-    const match = line.text.match(this.headerRegex)!;
-    const headerIndent = countIndentFromText(match[1]);
-    let blockName = match[2].trim();
-    const paramString = match[3];
-
-    // Additional check: Block header must either be an array (e.g., "[0]") or start with a letter.
-    if (!/^(?:\[[^\]]+\]|.+)$/.test(blockName)) {
-      const range = new vscode.Range(lineIndex, 0, lineIndex, line.text.length);
-      state.diagnostics.push(
-        new vscode.Diagnostic(
-          range,
-          `Block header should have a valid name or array index (e.g. "ItemGenerator" or "[0]"). Found: "${blockName}"`,
-          vscode.DiagnosticSeverity.Warning
-        )
-      );
-    }
-
-    // Formatting: adjust header line indent to parent's required content indent (if any)
-    let expectedIndent = 0;
-    if (state.stack.length > 0) {
-      expectedIndent = state.stack[state.stack.length - 1].requiredContentIndent;
-    }
-    const actualIndentChars = line.firstNonWhitespaceCharacterIndex;
-    const actualIndent = countIndentFromText(line.text);
-    if (actualIndent !== expectedIndent) {
-      const range = new vscode.Range(lineIndex, 0, lineIndex, actualIndentChars);
-      state.edits.push(vscode.TextEdit.replace(range, " ".repeat(expectedIndent)));
-    }
-
-    // Diagnostics: if a header is underindented relative to its parent block, report error.
-    if (state.stack.length > 0 && headerIndent < state.stack[state.stack.length - 1].requiredContentIndent) {
-      const range = new vscode.Range(lineIndex, 0, lineIndex, line.text.length);
-      state.diagnostics.push(
-        new vscode.Diagnostic(
-          range,
-          `Block header "${blockName}" should be indented at least ${
-            state.stack[state.stack.length - 1].requiredContentIndent
-          } spaces (found ${headerIndent}).`,
-          vscode.DiagnosticSeverity.Error
-        )
-      );
-    }
-
-    // Diagnostics: check parameters format if present.
-    if (paramString) {
-      const trimmedParam = paramString.trim();
-      if (!trimmedParam.startsWith("{") || !trimmedParam.endsWith("}")) {
-        const startIdx = line.text.indexOf(paramString);
-        const range = new vscode.Range(lineIndex, startIdx, lineIndex, startIdx + paramString.length);
-        state.diagnostics.push(
-          new vscode.Diagnostic(range, `Parameters should be enclosed in { }`, vscode.DiagnosticSeverity.Warning)
-        );
-      }
-    }
-
-    // Push block info onto the stack.
-    state.stack.push({
-      name: blockName,
-      headerIndent: headerIndent,
-      requiredContentIndent: headerIndent + state.indentLevel,
-      line: lineIndex,
-    });
-  }
-}
-
-/**
- * Handler for end lines (struct.end)
- */
-class EndLineHandler implements ILineHandler {
-  private endRegex = /^(\s*)struct\.end\s*$/;
-
-  canHandle(lineText: string): boolean {
-    return this.endRegex.test(lineText);
-  }
-
-  handle(line: vscode.TextLine, lineIndex: number, state: ProcessingState): void {
-    const match = line.text.match(this.endRegex)!;
-    const endIndent = countIndentFromText(match[1]);
-    const actualIndentChars = line.firstNonWhitespaceCharacterIndex;
-    const actualIndent = countIndentFromText(line.text);
-
-    if (state.stack.length === 0) {
-      // Diagnostics: orphan struct.end
-      const range = new vscode.Range(lineIndex, 0, lineIndex, line.text.length);
-      state.diagnostics.push(
-        new vscode.Diagnostic(
-          range,
-          `Found "struct.end" without a matching "struct.begin".`,
-          vscode.DiagnosticSeverity.Error
-        )
-      );
-      // Formatting: force no indent
-      if (actualIndent !== 0) {
-        const range = new vscode.Range(lineIndex, 0, lineIndex, actualIndentChars);
-        state.edits.push(vscode.TextEdit.replace(range, ""));
-      }
-    } else {
-      const block = state.stack.pop()!;
-      // Formatting: ensure end line has same indent as header.
-      if (actualIndent !== block.headerIndent) {
-        const range = new vscode.Range(lineIndex, 0, lineIndex, actualIndentChars);
-        state.edits.push(vscode.TextEdit.replace(range, " ".repeat(block.headerIndent)));
-      }
-      // Diagnostics: check end indent matches header.
-      if (endIndent !== block.headerIndent) {
-        const range = new vscode.Range(lineIndex, 0, lineIndex, line.text.length);
-        state.diagnostics.push(
-          new vscode.Diagnostic(
-            range,
-            `Block end indentation (${endIndent}) should match block header indentation (${block.headerIndent}) for block "${block.name}".`,
-            vscode.DiagnosticSeverity.Warning
-          )
-        );
-      }
-    }
-  }
-}
-
-/**
- * Handler for content lines (all other nonblank lines)
- */
-class ContentLineHandler implements ILineHandler {
-  canHandle(lineText: string): boolean {
-    // Content lines: any nonblank line that isnt a header or end.
-    return lineText.trim().length > 0;
-  }
-
-  handle(line: vscode.TextLine, lineIndex: number, state: ProcessingState): void {
-    if (state.stack.length > 0) {
-      const expectedIndent = state.stack[state.stack.length - 1].requiredContentIndent;
-      const actualIndentChars = line.firstNonWhitespaceCharacterIndex;
-      const actualIndent = countIndentFromText(line.text);
-      // Formatting: adjust content indent
-      if (actualIndent !== expectedIndent) {
-        const range = new vscode.Range(lineIndex, 0, lineIndex, actualIndentChars);
-        state.edits.push(vscode.TextEdit.replace(range, " ".repeat(expectedIndent)));
-      }
-      // Diagnostics: warn if content underindented
-      if (actualIndent < expectedIndent) {
-        const range = new vscode.Range(lineIndex, 0, lineIndex, line.text.length);
-        state.diagnostics.push(
-          new vscode.Diagnostic(
-            range,
-            `Content inside block "${
-              state.stack[state.stack.length - 1].name
-            }" should be indented at least ${expectedIndent} spaces (found ${actualIndent}).`,
-            vscode.DiagnosticSeverity.Warning
-          )
-        );
-      }
-    }
-  }
-}
-
-/**
- * A processor that iterates over document lines and applies handlers.
- */
-class DocumentProcessor {
-  private handlers: ILineHandler[];
-
-  constructor(handlers: ILineHandler[]) {
-    // Order matters: header and end handlers should be evaluated before generic content.
-    this.handlers = handlers;
-  }
-
-  process(document: vscode.TextDocument, state: ProcessingState): void {
-    for (let i = 0; i < document.lineCount; i++) {
-      const line = document.lineAt(i);
-      if (line.text.trim().length === 0) continue;
-      for (const handler of this.handlers) {
-        if (handler.canHandle(line.text)) {
-          handler.handle(line, i, state);
-          break;
-        }
-      }
-    }
-    // Report unclosed blocks.
-    while (state.stack.length > 0) {
-      const block = state.stack.pop()!;
-      const blockLine = document.lineAt(block.line);
-      const range = new vscode.Range(block.line, 0, block.line, blockLine.text.length);
-      state.diagnostics.push(
-        new vscode.Diagnostic(
-          range,
-          `Block "${block.name}" was not closed. Missing "struct.end".`,
-          vscode.DiagnosticSeverity.Error
-        )
-      );
-    }
-  }
-}
+import { validateDocument, formatDocument, buildAST } from "./astBuilder";
+import { getIndentLevel, getTabWidth } from "./config";
+import { ASTNode, BlockNode } from "./ast";
 
 /**
  * Folding Range Provider: allows collapsing nested blocks.
@@ -277,29 +13,22 @@ class StalkercfgFoldingRangeProvider implements vscode.FoldingRangeProvider {
     context: vscode.FoldingContext,
     token: vscode.CancellationToken
   ): vscode.FoldingRange[] {
+    const tabWidth = getTabWidth();
+    const indentLevel = getIndentLevel();
+    const ast = buildAST(document, tabWidth, indentLevel);
     const ranges: vscode.FoldingRange[] = [];
-    const stack: { start: number; headerIndent: number; name: string }[] = [];
-    const headerRegex = /^(\s*)(.+?)\s*:\s*struct\.begin(?:\s*(\{.*\}))?\s*$/;
-    const endRegex = /^(\s*)struct\.end\s*$/;
 
-    for (let i = 0; i < document.lineCount; i++) {
-      const line = document.lineAt(i);
-      if (line.text.trim().length === 0) continue;
-
-      const headerMatch = line.text.match(headerRegex);
-      if (headerMatch) {
-        stack.push({ start: i, headerIndent: headerMatch[1].length, name: headerMatch[2].trim() });
-        continue;
-      }
-
-      const endMatch = line.text.match(endRegex);
-      if (endMatch && stack.length > 0) {
-        const block = stack.pop()!;
-        // Create a folding range from the header line to the end line.
-        // (You can adjust the range if you prefer to hide the header itself.)
-        ranges.push(new vscode.FoldingRange(block.start, i, vscode.FoldingRangeKind.Region));
+    function collectFoldingRanges(node: ASTNode) {
+      if (node.type === "Block") {
+        const blockNode = node as BlockNode;
+        if (blockNode.endLine !== undefined) {
+          ranges.push(new vscode.FoldingRange(blockNode.startLine, blockNode.endLine, vscode.FoldingRangeKind.Region));
+        }
+        blockNode.children.forEach(collectFoldingRanges);
       }
     }
+
+    ast.children.forEach(collectFoldingRanges);
     return ranges;
   }
 }
@@ -312,134 +41,85 @@ class StalkercfgDocumentSymbolProvider implements vscode.DocumentSymbolProvider 
     document: vscode.TextDocument,
     token: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.DocumentSymbol[]> {
-    const symbols: vscode.DocumentSymbol[] = [];
-    const stack: vscode.DocumentSymbol[] = [];
-    const headerRegex = /^(\s*)(.+?)\s*:\s*struct\.begin(?:\s*(\{.*\}))?\s*$/;
-    const endRegex = /^(\s*)struct\.end\s*$/;
+    const tabWidth = getTabWidth();
+    const indentLevel = getIndentLevel();
+    const ast = buildAST(document, tabWidth, indentLevel);
 
-    for (let i = 0; i < document.lineCount; i++) {
-      const line = document.lineAt(i);
-      if (line.text.trim().length === 0) continue;
-
-      const headerMatch = line.text.match(headerRegex);
-      if (headerMatch) {
-        const indent = headerMatch[1].length;
-        const name = headerMatch[2].trim();
+    function collectSymbols(node: ASTNode): vscode.DocumentSymbol[] {
+      const symbols: vscode.DocumentSymbol[] = [];
+      if (node.type === "Block") {
+        const blockNode = node as BlockNode;
+        const range = new vscode.Range(
+          blockNode.startLine,
+          0,
+          blockNode.endLine ?? blockNode.startLine,
+          document.lineAt(blockNode.endLine ?? blockNode.startLine).text.length
+        );
         const symbol = new vscode.DocumentSymbol(
-          name,
+          blockNode.header.name,
           "struct block",
           vscode.SymbolKind.Namespace,
-          line.range,
-          line.range
+          range,
+          range
         );
-        // Determine hierarchy: if the stack is empty, add to top-level.
-        if (stack.length === 0) {
-          symbols.push(symbol);
-        } else {
-          // If current header indent is greater than the last symbol's indent, nest it.
-          const parent = stack[stack.length - 1];
-          parent.children.push(symbol);
-        }
-        stack.push(symbol);
-        continue;
+        symbol.children = blockNode.children.flatMap(collectSymbols);
+        symbols.push(symbol);
       }
-
-      const endMatch = line.text.match(endRegex);
-      if (endMatch && stack.length > 0) {
-        // Pop the last block symbol and update its range end.
-        const symbol = stack.pop()!;
-        symbol.range = new vscode.Range(symbol.range.start, line.range.end);
-        symbol.selectionRange = symbol.range;
-      }
+      return symbols;
     }
-    return symbols;
+
+    return ast.children.flatMap(collectSymbols);
   }
 }
 
-/**
- * Global singleton instances
- */
-const indentationService: IIndentationService = new IndentationService();
-const handlers: ILineHandler[] = [new HeaderLineHandler(), new EndLineHandler(), new ContentLineHandler()];
-const processor = new DocumentProcessor(handlers);
-
-/**
- * Debounce timer for incremental diagnostics.
- */
-let diagnosticTimeout: NodeJS.Timeout | undefined;
-
-/**
- * Updates diagnostics by processing the document.
- */
-function updateDiagnostics(document: vscode.TextDocument, diagnosticCollection: vscode.DiagnosticCollection): void {
-  // Only validate files with .cfg extension (case-insensitive)
-  const path = document.uri.fsPath || document.fileName || "";
-  if (!/\.cfg$/i.test(path)) {
-    // clear diagnostics for non-cfg files
-    diagnosticCollection.set(document.uri, []);
-    return;
-  }
-  const tabWidth = vscode.workspace.getConfiguration("stalker2CfgValidator").get<number>("tabWidth", TAB_WIDTH);
-  const diagnostics = validateDocument(document, tabWidth);
-  diagnosticCollection.set(document.uri, diagnostics);
-}
-
-/**
- * Extension activation: registers formatting, diagnostics, folding, and symbol providers.
- */
 export function activate(context: vscode.ExtensionContext) {
   const diagnosticCollection = vscode.languages.createDiagnosticCollection("stalker2CfgValidator");
+  let diagnosticTimeout: NodeJS.Timeout | undefined;
 
-  // Incremental diagnostics with debouncing.
-  if (vscode.window.activeTextEditor) {
-    const doc = vscode.window.activeTextEditor.document;
-    if (/\.cfg$/i.test(doc.uri.fsPath || doc.fileName || "")) updateDiagnostics(doc, diagnosticCollection);
+  function updateDiagnostics(document: vscode.TextDocument) {
+    if (!/\.cfg$/i.test(document.uri.fsPath || document.fileName || "")) {
+      diagnosticCollection.set(document.uri, []);
+      return;
+    }
+    const tabWidth = getTabWidth();
+    const indentLevel = getIndentLevel();
+    const diagnostics = validateDocument(document, tabWidth, indentLevel);
+    diagnosticCollection.set(document.uri, diagnostics);
   }
+
+  if (vscode.window.activeTextEditor) {
+    updateDiagnostics(vscode.window.activeTextEditor.document);
+  }
+
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor) {
+        updateDiagnostics(editor.document);
+      }
+    })
+  );
+
   context.subscriptions.push(
     vscode.workspace.onDidChangeTextDocument((e) => {
       if (diagnosticTimeout) {
         clearTimeout(diagnosticTimeout);
       }
-      diagnosticTimeout = setTimeout(() => {
-        if (/\.cfg$/i.test(e.document.uri.fsPath || e.document.fileName || ""))
-          updateDiagnostics(e.document, diagnosticCollection);
-      }, 300);
-    })
-  );
-  context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor((editor) => {
-      if (editor) {
-        if (/\.cfg$/i.test(editor.document.uri.fsPath || editor.document.fileName || ""))
-          updateDiagnostics(editor.document, diagnosticCollection);
-      }
-    })
-  );
-  context.subscriptions.push(
-    vscode.workspace.onDidSaveTextDocument((doc) => {
-      if (/\.cfg$/i.test(doc.uri.fsPath || doc.fileName || "")) updateDiagnostics(doc, diagnosticCollection);
+      diagnosticTimeout = setTimeout(() => updateDiagnostics(e.document), 300);
     })
   );
 
-  // Register document formatting provider.
   context.subscriptions.push(
     vscode.languages.registerDocumentFormattingEditProvider("stalkercfg", {
-      provideDocumentFormattingEdits(
-        document: vscode.TextDocument,
-        options: vscode.FormattingOptions,
-        token: vscode.CancellationToken
-      ): vscode.TextEdit[] {
-        const tabWidth = vscode.workspace.getConfiguration("stalker2CfgValidator").get<number>("tabWidth", TAB_WIDTH);
-        return formatDocument(document, indentationService.getIndentLevel(), tabWidth);
+      provideDocumentFormattingEdits(document: vscode.TextDocument): vscode.TextEdit[] {
+        return formatDocument(document, getIndentLevel(), getTabWidth());
       },
     })
   );
 
-  // Register folding range provider.
   context.subscriptions.push(
     vscode.languages.registerFoldingRangeProvider("stalkercfg", new StalkercfgFoldingRangeProvider())
   );
 
-  // Register document symbol provider.
   context.subscriptions.push(
     vscode.languages.registerDocumentSymbolProvider("stalkercfg", new StalkercfgDocumentSymbolProvider())
   );
