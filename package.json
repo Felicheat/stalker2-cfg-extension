@@ -2,7 +2,7 @@
   "name": "stalker2-cfg-validator",
   "displayName": "Stalker 2 CFG Language Support",
   "description": "Comprehensive language support for Stalker 2 .cfg files, providing robust error-checking, formatting, and code intelligence.",
-  "version": "1.0.0",
+  "version": "0.9.1",
   "author": "Felicheat",
   "publisher": "felicheat",
   "type": "module",
