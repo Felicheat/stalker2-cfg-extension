@@ -15,6 +15,8 @@ type TokenType =
   | "COMMENT"
   | "STRING"
   | "DOUBLE_STRING"
+  | "INTEGER"
+  | "FLOAT"
   | "OTHER";
 
 interface Token {
@@ -123,6 +125,16 @@ function tokenize(document: vscode.TextDocument): Token[][] {
         continue;
       }
 
+      // capture numbers
+      const numMatch = /^(-?(?:[0-9]+\.[0-9]*|\.[0-9]+)(?:f)?)|(^-?[0-9]+)/.exec(lineText.slice(j));
+      if (numMatch) {
+        const txt = numMatch[0];
+        const type = numMatch[1] ? "FLOAT" : "INTEGER";
+        lineTokens.push({ type, text: txt, line: i, start: j, end: j + txt.length });
+        j += txt.length;
+        continue;
+      }
+
       // capture params token if we have a brace pair on the same line (e.g. {refkey=...})
       if (ch === "{") {
         const endIdx = lineText.indexOf("}", j + 1);
@@ -184,14 +196,17 @@ export function buildAST(document: vscode.TextDocument, tabWidth: number, indent
   const orphanEnds: number[] = [];
   const skipLines = new Set<number>();
 
-  const headerRegex = /^(\s*)(.+?)\s*:\s*struct\.begin(?:\s*(\{.*\}))?/; // Corrected regex for params
+  // UPDATED: Added \b word boundary to strictly match 'struct.begin' and prevent typos like 'struct.beginm'
+  const headerRegex = /^(\s*)(.+?)\s*:\s*struct\.begin\b(?:\s+([\s\S]*))?$/;
 
   // First pass: collect begins and pair with ends using a stack
   for (let i = 0; i < lines; i++) {
     const text = document.lineAt(i).text;
     if (text.trim().length === 0) continue;
-    // detect struct.begin
-    if (text.includes("struct.begin")) {
+
+    // Detect struct.begin with strict word boundary
+    // The previous regex already had \b, but here we explicitly use the strict headerRegex check.
+    if (headerRegex.test(text)) {
       // try regex first to capture inline params
       const m = text.match(headerRegex);
       let name = "";
@@ -290,8 +305,9 @@ export function buildAST(document: vscode.TextDocument, tabWidth: number, indent
       continue;
     }
 
-    // detect struct.end
-    if (text.includes("struct.end")) {
+    // UPDATED: Check for strict 'struct.end'.
+    // This ensures the trimmed line is exactly "struct.end" and nothing else (e.g., no "struct.endd" or "struct.end something").
+    if (/^struct\.end$/.test(text.trim())) {
       if (beginStack.length === 0) {
         orphanEnds.push(i);
       } else {
@@ -524,8 +540,35 @@ export function validateDocument(
 
   const lineTokens = tokenize(document);
   const bracketStack: Token[] = [];
-  for (const tokens of lineTokens) {
-    for (const token of tokens) {
+  for (let i = 0; i < lineTokens.length; i++) {
+    const tokens = lineTokens[i];
+    let hasAssignment = false;
+    for (let j = 0; j < tokens.length; j++) {
+      const token = tokens[j];
+      if (token.type === "EQUAL") {
+        hasAssignment = true;
+      }
+      if (
+        (token.type === "STRING" ||
+          token.type === "DOUBLE_STRING" ||
+          token.type === "INTEGER" ||
+          token.type === "FLOAT") &&
+        !hasAssignment
+      ) {
+        if (token.type === "INTEGER") {
+          const prevToken = j > 0 ? tokens[j - 1] : null;
+          const nextToken = j < tokens.length - 1 ? tokens[j + 1] : null;
+          if (prevToken && prevToken.type === "LBRACKET" && nextToken && nextToken.type === "RBRACKET") {
+            continue;
+          }
+        }
+        push(
+          token.line,
+          token.start,
+          `Floating value '${token.text}' is not part of an assignment.`,
+          vscode.DiagnosticSeverity.Warning
+        );
+      }
       if (token.type === "STRING" && !token.text.endsWith("'")) {
         push(token.line, token.start, "Unclosed string literal.", vscode.DiagnosticSeverity.Error);
       }
@@ -657,7 +700,7 @@ export function validateDocument(
       // (i.e., parent is Document or undefined). End nodes inside Blocks are valid.
       if (!parent || parent.type === "Document") {
         // Suppress orphan diagnostic if this end is directly followed by a header or EOF
-        const headerRegex = /^(\s*)(.+?)\s*:\s*struct\.begin(?:\s*(\{.*\}))?\s*$/;
+        const headerRegex = /^(\s*)(.+?)\s*:\s*struct\.begin\b(?:\s*(\{.*\}))?\s*$/;
         const doc = document as vscode.TextDocument;
         const lineCount = doc.lineCount;
         const ln = node.startLine;
