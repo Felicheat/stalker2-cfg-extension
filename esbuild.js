@@ -28,7 +28,6 @@ async function buildSingle(entry, outfile) {
 async function main() {
   // Build extension and AST builder bundle so a small runner can import the AST code.
   await buildSingle("src/extension.ts", "out/extension.cjs");
-  await buildSingle("src/astBuilder.ts", "out/astBuilder.cjs");
 }
 
 /**

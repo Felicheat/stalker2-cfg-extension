@@ -1,12 +1,11 @@
 import * as vscode from "vscode";
-
-import { validateDocument, formatDocument, buildAST } from "./astBuilder";
 import { getIndentLevel, getTabWidth } from "./config";
+import { formatDocument } from "./formatter";
+import { initializeLogger } from "./logger";
+import { buildAST } from "./parser";
+import { validateDocument } from "./validator";
 import { ASTNode, BlockNode } from "./ast";
 
-/**
- * Folding Range Provider: allows collapsing nested blocks.
- */
 class StalkercfgFoldingRangeProvider implements vscode.FoldingRangeProvider {
   provideFoldingRanges(
     document: vscode.TextDocument,
@@ -33,9 +32,6 @@ class StalkercfgFoldingRangeProvider implements vscode.FoldingRangeProvider {
   }
 }
 
-/**
- * Document Symbol Provider: creates an outline of blocks.
- */
 class StalkercfgDocumentSymbolProvider implements vscode.DocumentSymbolProvider {
   provideDocumentSymbols(
     document: vscode.TextDocument,
@@ -73,6 +69,7 @@ class StalkercfgDocumentSymbolProvider implements vscode.DocumentSymbolProvider 
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  initializeLogger();
   const diagnosticCollection = vscode.languages.createDiagnosticCollection("stalker2CfgValidator");
   let diagnosticTimeout: NodeJS.Timeout | undefined;
 

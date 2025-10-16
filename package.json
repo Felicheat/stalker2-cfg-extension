@@ -1,27 +1,39 @@
 {
   "name": "stalker2-cfg-validator",
-  "displayName": "STALKER 2 CFG Struct Validator",
-  "description": "A lightweight VS Code extension for validating STALKER 2's struct.begin/struct.end blocks.",
-  "version": "0.4.0",
+  "displayName": "Stalker 2 CFG Language Support",
+  "description": "Comprehensive language support for Stalker 2 .cfg files, providing robust error-checking, formatting, and code intelligence.",
+  "version": "1.0.0",
   "author": "Felicheat",
+  "publisher": "felicheat",
   "type": "module",
+  "icon": "images/icon.png",
   "engines": {
-    "vscode": "^1.60.0"
+    "vscode": "^1.75.0"
   },
   "categories": [
-    "Other"
+    "Linters",
+    "Formatters",
+    "Programming Languages"
   ],
+  "galleryBanner": {
+    "color": "#1e2d38",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/Felicheat/stalker2-cfg-extension.git"
   },
   "license": "GPL-3.0-only",
   "keywords": [
-    "vscode",
-    "extension",
-    "validator",
+    "stalker",
     "stalker2",
-    "cfg"
+    "cfg",
+    "linter",
+    "formatter",
+    "validator",
+    "modding",
+    "vscode",
+    "extension"
   ],
   "activationEvents": [
     "onLanguage:stalkercfg"
@@ -56,43 +68,44 @@
     ],
     "configuration": {
       "type": "object",
-      "title": "STALKER 2 CFG Struct Validator",
+      "title": "STALKER 2 CFG Support",
       "properties": {
         "stalker2CfgValidator.indentLevel": {
           "type": "number",
           "default": 3,
-          "description": "The number of spaces to indent content within each block."
+          "description": "The number of spaces to use for each level of indentation when formatting."
+        },
+        "stalker2CfgValidator.tabWidth": {
+          "type": "number",
+          "default": 3,
+          "description": "The number of spaces a tab character represents for validation and formatting."
         }
-      ,
-      "stalker2CfgValidator.tabWidth": {
-        "type": "number",
-        "default": 3,
-        "description": "How many spaces a tab character represents when computing indentation rules."
-      }
       }
     }
   },
   "scripts": {
     "compile": "npm run check-types && node esbuild.js",
-    "run-example": "npm run compile && node scripts/run-example.cjs",
-    "apply-format": "npm run compile && node scripts/apply-format.cjs",
     "check-types": "tsc --noEmit",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "package": "vsce package"
+    "package": "vsce package",
+    "publish": "vsce publish"
   },
   "devDependencies": {
-    "@types/node": "^18.0.0",
-    "@types/vscode": "^1.60.0",
-    "esbuild": "^0.25.0",
-    "typescript": "^4.5.0",
-    "@vscode/vsce": "^3.2.2"
+    "@types/node": "^20.11.20",
+    "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^2.15.0",
+    "esbuild": "^0.20.1",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.3.3"
   },
   "files": [
     "out",
     "syntaxes",
     "themes",
+    "images",
+    "configuration",
     "README.md",
     "LICENSE"
   ]

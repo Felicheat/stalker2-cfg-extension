@@ -1,110 +1,80 @@
-# STALKER 2 CFG Struct Validator VS Code Extension
+# STALKER 2 (.cfg) Language Support
 
-A lightweight Visual Studio Code extension for validating Stalker 2 CFG file formats that use `struct.begin`/`struct.end` blocks. The extension builds an Abstract Syntax Tree (AST) to validate block structure, indentation, and parameter formatting, providing real-time diagnostics to help you catch mistakes as you code.
+[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-blue.svg)](https://marketplace.visualstudio.com/items?itemName=Felicheat.stalker2-cfg-validator)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-## Features
+**The essential VS Code extension for modding STALKER 2.**
 
-- **AST-Based Validation:** Uses a robust two-pass parser to build and validate the document structure.
-- **Block Matching:** Ensures every `struct.begin` has a corresponding `struct.end` through proper AST construction.
-- **Indentation Checks:** Verifies that all content inside blocks is properly indented relative to their parent blocks.
-- **Enhanced Parameter Handling:**
-  - Supports inline parameters in block headers: `BlockName : struct.begin {key=value}`
-  - Recognizes standalone parameter lines: `{bskipref}`
-  - Handles array notation: `[*]` and `[0]` index formats
-  - Supports parameters on property lines: `[*] = empty {bskipref}`
-- **Tab Support:** Configurable tab width (defaults to 3 spaces) for proper indentation validation
-- **Nested Blocks:** Full support for arbitrarily nested block structures
-- **Document Symbols:** Provides outline view of the cfg file structure
-- **Code Folding:** Supports collapsing/expanding block structures
+This extension provides comprehensive language support for `.cfg` files, transforming VS Code into a powerful and intelligent editor for Stalker 2 configurations. It goes beyond simple syntax highlighting to provide robust error-checking, smart formatting, and code navigation features that make modding faster, easier, and more reliable.
+
+Built on a resilient, stack-based parser, this tool correctly understands your code's structure, even with complex nesting and inconsistent whitespace.
+
+## Key Features
+
+The extension is designed to feel like native language support, providing the features you'd expect from a professional IDE.
+
+### Smart Validation & Diagnostics
+
+- **Real-time Error Checking:** Instantly spots syntax errors, from missing `struct.end` blocks to malformed properties.
+- **Intelligent Typo Detection:** Catches common misspellings of keywords like `struct.begin` and suggests the correct alternative.
+- **Style & Consistency Linter:** Provides warnings for inconsistent spacing, duplicate property keys, and invalid block or property names, helping you maintain clean code.
+- **Floating Value Detection:** Warns you about unassigned string or number literals that would otherwise be ignored by the game engine.
+
+### Powerful Formatting
+
+- **Format on Save:** Automatically formats your entire document to be clean, consistent, and readable every time you save.
+- **Whitespace Normalization:** Solves the "tabs vs. spaces" problem by converting all indentation to a consistent format, eliminating a common source of parsing errors.
+- **Guaranteed Safety:** The formatter automatically disables itself if it detects critical syntax errors, preventing any possibility of corrupting your file.
+
+### Enhanced IDE Experience
+
+- **Code Folding:** Easily collapse and expand `struct.begin`/`struct.end` blocks to focus on the code you're working on.
+- **Document Outline:** The Explorer pane provides a complete symbol tree of your document, allowing you to quickly navigate between any block, no matter how deeply nested.
+- **Syntax Highlighting:** A dedicated grammar provides clear and accurate color-coding for keywords, types, properties, and values.
+
+## How It Works
+
+This extension's power comes from its robust parser, which builds an **Abstract Syntax Tree (AST)** of your code in real-time.
+
+1. **Lexical Analysis:** The code is first broken down into a stream of tokens (keywords, names, values).
+2. **Stack-Based Parsing:** A stack-based algorithm reads the tokens to build a hierarchical tree of your `struct` blocks. **This method is immune to errors from mixed tabs and spaces.**
+3. **Validation & Formatting:** The extension then walks this correct AST to identify errors, find style inconsistencies, and calculate formatting edits.
 
 ## Configuration
 
-The extension supports the following settings:
+You can customize the extension's behavior in your VS Code settings:
 
-- `stalker2CfgValidator.tabWidth`: Number of spaces a tab character represents (default: 3)
-
-## Requirements
-
-- **Visual Studio Code:** Version 1.60.0 or later.
-- **Node.js:** Version 18 (or later) is recommended.
-- **npm:** Comes with Node.js.
+- `stalker2CfgValidator.indentLevel`: The number of spaces to use for each level of indentation when formatting. (Default: `3`)
+- `stalker2CfgValidator.tabWidth`: How many spaces a tab character (`\t`) should be treated as for validation purposes. (Default: `3`)
 
 ## Installation
 
-### From Source (For Developers)
+### From the Marketplace (Recommended)
 
-1. **Clone the Repository:**
+1. Open the **Extensions** view in VS Code (`Ctrl+Shift+X`).
+2. Search for `STALKER 2 CFG Struct Validator`.
+3. Click **Install**.
 
-   ```bash
-   git clone https://github.com/Felicheat/stalker2-cfg-extension.git
-   cd stalker2-cfg-extension
-   ```
+### From a VSIX File
 
-2. **Install Dependencies:**
+1. Open the Command Palette (`Ctrl+Shift+P`).
+2. Run **Extensions: Install from VSIX...**
+3. Select the `.vsix` file.
 
-   ```bash
-   npm install
-   ```
+## For Developers
 
-3. **Compile the Extension:**
+### Quick Start
 
-   ```bash
-   npm run compile
-   ```
+1. Clone the repository: `git clone https://github.com/Felicheat/stalker2-cfg-extension.git`
+2. Install dependencies: `npm install`
+3. Compile the extension: `npm run compile`
+4. Press `F5` to open an Extension Development Host with the extension loaded.
 
-4. **Launch the Extension in VS Code:**
+### Scripts
 
-   - Open the project folder in VS Code.
-   - Press `F5` to open a new Extension Development Host with the extension loaded.
+- `npm run watch`: Watch for changes and recompile automatically.
+- `npm run package`: Build a `.vsix` distributable file.
 
-### Creating the VSIX Package
+## Contributing
 
-Once you have the files set up and your code compiled (i.e., the `out/extension.cjs` file exists), you can create the VSIX file using the [VSCE](https://github.com/microsoft/vscode-vsce) tool.
-
-1. **Install VSCE (if you haven't already):**
-
-   ```bash
-   npm install -g vsce
-   ```
-
-2. **Package the Extension:**
-
-   From the root of your project, run:
-
-   ```bash
-   vsce package
-   ```
-
-   This will create a VSIX file (e.g., `struct-validator-0.0.1.vsix`) that you can distribute for offline installation.
-
-### Using a VSIX File
-
-If you have a packaged VSIX file:
-
-1. Open Visual Studio Code.
-2. Open the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`).
-3. Type and select **Extensions: Install from VSIX...**.
-4. Navigate to and select the downloaded `.vsix` file.
-
-## File Format Support
-
-The extension recognizes the following syntax patterns:
-
-```cfg
-BlockName : struct.begin {optional_params}
-   Property = Value
-   ArrayItem[*] = Value {optional_params}
-   
-   NestedBlock : struct.begin
-      [0] : struct.begin
-         Content = Value
-      struct.end
-   struct.end
-struct.end
-```
-
-Special handling is provided for:
-- Array indices: `[*]` or `[0]` notation
-- Standalone parameter lines: `{bskipref}`
-- Property parameters: `PropertyName = Value {params}`
-- Multi-line parameter blocks
+Contributions, issues, and feature requests are welcome! Please feel free to open an issue or submit a pull request on the [GitHub repository](https://github.com/Felicheat/stalker2-cfg-extension).

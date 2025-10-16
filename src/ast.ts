@@ -1,21 +1,30 @@
 import * as vscode from "vscode";
 
-// Minimal AST node definitions for the stalkercfg format.
-export type NodeType = "Document" | "Block" | "Header" | "End" | "Property";
-
+// --- AST Node Definitions ---
 export interface ASTNode {
-  type: NodeType;
+  type: string;
   startLine: number;
-  endLine?: number;
 }
 
-export type Params = Record<string, string>;
+export interface DocumentNode extends ASTNode {
+  type: "Document";
+  children: ASTNode[];
+}
+
+export interface BlockNode extends ASTNode {
+  type: "Block";
+  header: HeaderNode;
+  children: ASTNode[];
+  headerIndent: number;
+  requiredContentIndent: number;
+  endLine?: number;
+}
 
 export interface HeaderNode extends ASTNode {
   type: "Header";
   name: string;
-  params?: Params;
-  paramsRaw?: string; // raw text for fallback/error messages
+  params?: Record<string, string>;
+  paramsRaw?: string;
   indent: number;
 }
 
@@ -30,27 +39,46 @@ export interface PropertyNode extends ASTNode {
   value: string;
   indent: number;
   paramsRaw?: string;
-  params?: Params;
+  params?: Record<string, string>;
 }
 
-export interface BlockNode extends ASTNode {
-  type: "Block";
-  header: HeaderNode;
-  children: ASTNode[];
-  headerIndent: number;
-  requiredContentIndent: number;
+export interface InvalidNode extends ASTNode {
+  type: "Invalid";
+  text: string;
+  indent: number;
 }
 
-export interface DocumentNode extends ASTNode {
-  type: "Document";
-  children: ASTNode[];
+export interface MalformedHeaderNode extends ASTNode {
+  type: "MalformedHeader";
+  text: string;
+  indent: number;
 }
 
+// --- Utility Functions ---
 export function createDiagnostic(
   range: vscode.Range,
   message: string,
   severity: vscode.DiagnosticSeverity
 ): vscode.Diagnostic {
-  const d = new vscode.Diagnostic(range, message, severity);
-  return d;
+  return new vscode.Diagnostic(range, message, severity);
+}
+
+export function countIndentFromText(text: string, tabWidth: number = 2): number {
+  let indent = 0;
+  for (const char of text) {
+    if (char === " ") {
+      indent++;
+    } else if (char === "\t") {
+      indent += tabWidth;
+    } else {
+      break;
+    }
+  }
+  return indent;
+}
+
+export function getTabWidth(document: vscode.TextDocument): number {
+  const editorConfig = vscode.workspace.getConfiguration("editor", document.uri);
+  const tabSize = editorConfig.get<number>("tabSize") || 2;
+  return tabSize;
 }
